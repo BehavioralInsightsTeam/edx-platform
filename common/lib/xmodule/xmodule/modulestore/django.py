@@ -7,6 +7,7 @@ Passes settings.MODULESTORE as kwargs to MongoModuleStore
 from __future__ import absolute_import
 
 from importlib import import_module
+import gettext
 import logging
 
 import re
@@ -27,7 +28,7 @@ from xmodule.modulestore.draft_and_published import BranchSettingMixin
 from xmodule.modulestore.mixed import MixedModuleStore
 from xmodule.util.django import get_current_request_hostname
 import xblock.reference.plugins
-
+import xmodule.util.translation
 
 try:
     # We may not always have the request_cache module available
@@ -245,7 +246,27 @@ class ModuleI18nService(object):
     """
 
     def __getattr__(self, name):
-        return getattr(django.utils.translation, name)
+        """
+        Returns the requested attribute (typically a function) from the XBlock translation
+        library, if implemented.  Otherwise returns the django.utils.translation library attribute.
+        """
+        print "********** ModuleI18nService.__getattr__: {0} **********".format(name)
+        try:
+            "********** xmodule.util.translation.getattr **********"
+            return getattr(xmodule.util.translation, name)
+        except:
+            print '********** Falling back to django.utils.translation  **********'
+            return getattr(django.utils.translation, name)
+
+    def ugettext(self, string):
+        """
+        Attempts to look up the string in the XBlock's own domain.  If it can't find that domain then
+        we fall-back onto django.utils.translation.ugettext
+        """
+        print "********** ModuleI18nService.ugettext: {0} **********".format(string)
+        t = gettext.translation('django', "../venvs/edxapp/src/xblock-poll/poll/conf/locale")
+        _ = t.ugettext
+        return _(string)
 
     def strftime(self, *args, **kwargs):
         """
