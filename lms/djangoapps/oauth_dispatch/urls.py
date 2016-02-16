@@ -18,5 +18,3 @@ urlpatterns = patterns(
     #url(r'^access_token/(?P<token>[\w]+)/$', csrf_exempt(views.AccessTokenDetailView.as_view()), name='access_token_detail'),
     #url(r'^user_info/?$', csrf_exempt(views.UserInfoView.as_view()), name='user_info'),
 )
-
-

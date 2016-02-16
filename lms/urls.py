@@ -824,8 +824,6 @@ if settings.FEATURES.get('ENABLE_OAUTH2_PROVIDER'):
         url(r'^o/', include('oauth2_provider.urls', namespace='oauth2_provider')),
     )
 
-
-
 if settings.FEATURES.get('ENABLE_LMS_MIGRATION'):
     urlpatterns += (
         url(r'^migrate/modules$', 'lms_migration.migrate.manage_modulestores'),

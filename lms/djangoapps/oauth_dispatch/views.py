@@ -10,9 +10,9 @@ from edx_oauth2_provider import views as dop_views  # django-oauth2-provider vie
 from oauth2_provider import views as dot_views  # django-oauth-toolkit views
 # from provider.oauth2.views import AccessTokenDetailView
 
-
 DOT_BACKEND = object()
 DOP_BACKEND = object()
+
 
 class _DispatchingView(View):
     """
