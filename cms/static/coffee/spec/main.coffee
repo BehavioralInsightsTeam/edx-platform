@@ -165,6 +165,7 @@ requirejs.config({
                     ["\\[","\\]"],
                     ['[mathjax]','[/mathjax]']
                   ]
+                displayAlign: "left"
               MathJax.Hub.Configured()
         },
         "URI": {

@@ -213,7 +213,8 @@
                                 ["\\[","\\]"],
                                 ['[mathjax]','[/mathjax]']
                             ]
-                        }
+                        },
+                        displayAlign: "left"
                 });
                 // In order to eliminate all flashing during interactive
                 // preview, it is necessary to set processSectionDelay to 0

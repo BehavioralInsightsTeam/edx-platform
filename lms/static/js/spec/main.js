@@ -250,7 +250,8 @@
                         tex2jax: {
                             inlineMath: [['\\(', '\\)'], ['[mathjaxinline]', '[/mathjaxinline]']],
                             displayMath: [['\\[', '\\]'], ['[mathjax]', '[/mathjax]']]
-                        }
+                        },
+                        displayAlign: "left"
                     });
                     return MathJax.Hub.Configured();
                 }
