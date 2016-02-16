@@ -88,9 +88,6 @@
             "date": {
                 exports: "Date"
             },
-            "jquery": {
-                exports: "$"
-            },
             "jquery.cookie": {
                 deps: ["jquery"],
                 exports: "jQuery.fn.cookie"
