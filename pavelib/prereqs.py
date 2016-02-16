@@ -200,7 +200,7 @@ def uninstall_python_packages():
             uninstalled = True
 
         if any(line.startswith("edx-oauth2-provider==") for line in frozen):
-            sh("pip uninstall --disable-pip-version-check -y django-oauth2-provider")
+            sh("pip uninstall --disable-pip-version-check -y edx_oauth2-provider")
             uninstalled = True
 
         if not uninstalled:
