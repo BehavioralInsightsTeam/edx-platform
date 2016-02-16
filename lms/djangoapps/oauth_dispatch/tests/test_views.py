@@ -95,3 +95,10 @@ class TestAccessTokenView(TestCase):
         self.assertEqual(response.status_code, 200)
         data = json.loads(response.content)
         self.assertNotIn('refresh_token', data)
+
+
+@ddt.ddt
+class TestAuthorizationView(TestCase):
+    """
+    Test class for AccessTokenView
+    """

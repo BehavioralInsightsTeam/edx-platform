@@ -59,3 +59,11 @@ class AccessTokenView(_DispatchingView):
     """
     dot_view = dot_views.TokenView
     dop_view = dop_views.AccessTokenView
+
+
+class AuthorizationView(_DispatchingView):
+    """
+    Part of the authorization flow.
+    """
+    dop_view = dop_views.Capture
+    dot_view = dot_views.AuthorizationView
