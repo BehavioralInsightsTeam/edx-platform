@@ -30,8 +30,7 @@
                             this.$el.removeClass('hidden');
                         }
                     }
-                    template = _.template(paging_footer_template);
-                    this.$el.html(template({
+                    this.$el.html(_.template(paging_footer_template)({
                         current_page: this.collection.getPage(),
                         total_pages: this.collection.totalPages
                     }));

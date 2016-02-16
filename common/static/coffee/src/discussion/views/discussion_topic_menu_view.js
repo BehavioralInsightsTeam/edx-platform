@@ -34,7 +34,7 @@
             render: function() {
                 var context = _.clone(this.course_settings.attributes);
                 context.topics_html = this.renderCategoryMap(this.course_settings.get('category_map'));
-                this.$el.html(_.template($('#topic-template').html(), context));
+                this.$el.html(_.template($('#topic-template').html())(context));
                 this.dropdownButton = this.$('.post-topic-button');
                 this.topicMenu = this.$('.topic-menu-wrapper');
                 this.selectedTopic = this.$('.js-selected-topic');
