@@ -35,9 +35,10 @@ git+https://github.com/edx/django-rest-framework.git@3c72cb5ee5baebc432894737119
 django==1.8.9
 djangorestframework-jwt==1.7.2
 edx-django-oauth2-provider==0.5.0
+edx-djangorestframework-oauth==1.0.1
 edx-oauth2-provider==0.5.9
 edx-opaque-keys==0.2.1
-edx-organizations==0.3.1
+edx-organizations==0.4.0
 edx-rest-api-client==1.2.1
 edx-search==0.1.2
 facebook-sdk==0.4.0
