@@ -234,7 +234,7 @@ class ViewsTestCase(ModuleStoreTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(in_cart_span, response.content)
 
-    def assert_enrollment_link_present(self, is_anonymous, id=None):
+    def assert_enrollment_link_present(self, is_anonymous, _id=None):
         """ Prepare ecommerce checkout data and assert if the ecommerce link is contained in the response. """
         checkout_page = '/test_basket/'
         sku = 'TEST123'
@@ -268,8 +268,8 @@ class ViewsTestCase(ModuleStoreTestCase):
         else:
             href = href.format(checkout_page, 'sku=TEST123')
 
-        if id:
-            formatted_href = '{}{}'.format(href, ' id="{}">'.format(id))
+        if _id:
+            formatted_href = '{}{}'.format(href, ' id="{}">'.format(_id))
         else:
             formatted_href = '{}{}'.format(href, '>')
 
@@ -288,8 +288,8 @@ class ViewsTestCase(ModuleStoreTestCase):
     @ddt.unpack
     @unittest.skipUnless(settings.FEATURES.get('ENABLE_SHOPPING_CART'), "Shopping Cart not enabled in settings")
     @patch.dict(settings.FEATURES, {'ENABLE_PAID_COURSE_REGISTRATION': True})
-    def test_ecommerce_checkout_shopping_cart_enabled(self, is_anonymous, id):
-        self.assert_enrollment_link_present(is_anonymous=is_anonymous, id=id)
+    def test_ecommerce_checkout_shopping_cart_enabled(self, is_anonymous, _id):
+        self.assert_enrollment_link_present(is_anonymous=is_anonymous, id=_id)
 
     def test_user_groups(self):
         # depreciated function

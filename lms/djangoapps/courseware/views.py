@@ -145,8 +145,8 @@ def courses(request):
         courses_list = get_courses(request.user)
 
         if theming_helpers.get_value(
-            "ENABLE_COURSE_SORTING_BY_START_DATE",
-            settings.FEATURES["ENABLE_COURSE_SORTING_BY_START_DATE"]
+                "ENABLE_COURSE_SORTING_BY_START_DATE",
+                settings.FEATURES["ENABLE_COURSE_SORTING_BY_START_DATE"]
         ):
             courses_list = sort_by_start_date(courses_list)
         else:
@@ -902,7 +902,7 @@ def course_about(request, course_id):
         mode = ''
         ecomm_service = EcommerceService()
         if ecomm_service.is_enabled() and (
-            CourseMode.PROFESSIONAL in modes or CourseMode.NO_ID_PROFESSIONAL_MODE in modes
+                CourseMode.PROFESSIONAL in modes or CourseMode.NO_ID_PROFESSIONAL_MODE in modes
         ):
             mode = modes.get(CourseMode.PROFESSIONAL, '') or modes.get(CourseMode.NO_ID_PROFESSIONAL_MODE, '')
             ecommerce_checkout_link = ecomm_service.checkout_page_url(mode.sku)
