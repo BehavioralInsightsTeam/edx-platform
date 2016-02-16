@@ -33,7 +33,7 @@
             this.updateContext( this.templateContext() ).done(
                 function( templateContext ) {
                     // Render the template into the DOM
-                    $( this.el ).html( _.template( templateHtml, templateContext ) );
+                    $( this.el ).html( _.template( templateHtml)( templateContext ) );
 
                     // Allow subclasses to install custom event handlers
                     this.postRender();
