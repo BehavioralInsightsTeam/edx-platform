@@ -21,7 +21,7 @@
 
                 render: function() {
                     var onFirstPage = !this.collection.hasPreviousPage(),
-                        onLastPage = !this.collection.hasNextPage(), template;
+                        onLastPage = !this.collection.hasNextPage();
                     if (this.hideWhenOnePage) {
                         if (_.isUndefined(this.collection.totalPages)
                                 || this.collection.totalPages <= 1) {

@@ -38,9 +38,7 @@ if Backbone?
       @searchAlertCollection = new Backbone.Collection([], {model: Backbone.Model})
 
       @searchAlertCollection.on "add", (searchAlert) =>
-        content = _.template($("#search-alert-template").html())(
-          {'message': searchAlert.attributes.message, 'cid': searchAlert.cid}
-        )
+        content = _.template($("#search-alert-template").html())({'message': searchAlert.attributes.message, 'cid': searchAlert.cid})
         @$(".search-alerts").append(content)
         @$("#search-alert-" + searchAlert.cid + " a.dismiss").bind "click", searchAlert, (event) =>
           @removeSearchAlert(event.data.cid)
