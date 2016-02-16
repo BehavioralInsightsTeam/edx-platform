@@ -21,7 +21,7 @@
 
                 render: function() {
                     var onFirstPage = !this.collection.hasPreviousPage(),
-                        onLastPage = !this.collection.hasNextPage();
+                        onLastPage = !this.collection.hasNextPage(), template;
                     if (this.hideWhenOnePage) {
                         if (_.isUndefined(this.collection.totalPages)
                                 || this.collection.totalPages <= 1) {
@@ -30,7 +30,8 @@
                             this.$el.removeClass('hidden');
                         }
                     }
-                    this.$el.html(_.template(paging_footer_template, {
+                    template = _.template(paging_footer_template);
+                    this.$el.html(template({
                         current_page: this.collection.getPage(),
                         total_pages: this.collection.totalPages
                     }));

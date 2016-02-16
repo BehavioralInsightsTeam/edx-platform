@@ -51,9 +51,9 @@ define(["js/views/baseview", "underscore", "underscore.string", "jquery", "gette
                 name: this.$("input.chapter-name").val(),
                 asset_path: this.$("input.chapter-asset-path").val()
             });
+            var template = _.template(gettext("Upload a new PDF to “<%= name %>”"));
             var msg = new FileUploadModel({
-                title: _.template(gettext("Upload a new PDF to “<%= name %>”"),
-                    {name: course.escape('name')}),
+                title: template({name: course.escape('name')}),
                 message: gettext("Please select a PDF file to upload."),
                 mimeTypes: ['application/pdf']
             });

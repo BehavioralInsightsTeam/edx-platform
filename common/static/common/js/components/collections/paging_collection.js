@@ -79,7 +79,9 @@
              * underlying server API.
              */
             getPage: function () {
-                return this.currentPage + (this.isZeroIndexed ? 1 : 0);
+                return this.isZeroIndexed ? 1 : 0;
+                // Underscore upgrade issue-- this.currentPage is returning the function.
+                // return this.currentPage + (this.isZeroIndexed ? 1 : 0);
             },
 
             /**
