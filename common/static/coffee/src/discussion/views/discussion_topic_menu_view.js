@@ -6,7 +6,7 @@
                 'click .post-topic-button': 'toggleTopicDropdown',
                 'click .topic-menu-wrapper': 'handleTopicEvent',
                 'click .topic-filter-label': 'ignoreClick',
-                'keyup .topic-filter-input': this.DiscussionFilter.filterDrop
+                'keyup .topic-filter-input': 'filterDrop'
             },
 
             attributes: {
@@ -17,7 +17,9 @@
                 this.course_settings = options.course_settings;
                 this.currentTopicId = options.topicId;
                 this.maxNameWidth = 100;
-                _.bindAll(this);
+                _.bindAll(this,
+                    'toggleTopicDropdown', 'handleTopicEvent', 'hideTopicDropdown', 'ignoreClick', 'filterDrop'
+                );
                 return this;
             },
 
@@ -187,6 +189,38 @@
                     }
                 }
                 return name;
+            },
+
+            filterDrop: function (e) {
+                // TODO: verify this method is working properly.
+                // Code taken from CoffeeScript compiled js, but also defined "that" as I
+                // don't see how "this" was correct in the past.
+                var $drop, $items, query, that=this;
+                $drop = $(e.target).parents('.topic-menu-wrapper');
+                query = $(e.target).val();
+                $items = $drop.find('.topic-menu-item');
+
+                if (query.length === 0) {
+                    $items.removeClass('hidden');
+                    return;
+                }
+
+                $items.addClass('hidden');
+                $items.each(function () {
+                    var path, pathText, pathTitles;
+                    path = $(that).parents(".topic-menu-item").andSelf();
+                    pathTitles = path.children(".topic-title").map(function (_, elem) {
+                        return $(elem).text();
+                    }).get();
+                    pathText = pathTitles.join(" / ").toLowerCase();
+                    if (query.split(" ").every(function (term) {
+                            return pathText.search(term.toLowerCase()) !== -1;
+                        })) {
+                        $(that).removeClass('hidden');
+                        $(that).find('.topic-menu-item').removeClass('hidden');
+                        $(that).parents('.topic-menu-item').removeClass('hidden');
+                    }
+                });
             }
         });
     }
