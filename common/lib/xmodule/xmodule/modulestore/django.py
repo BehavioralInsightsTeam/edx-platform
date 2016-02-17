@@ -244,7 +244,7 @@ class ModuleI18nService(object):
     i18n service.
 
     """
-
+    print "********** MODULEI18NSERVICE **********"
     def __getattr__(self, name):
         """
         Returns the requested attribute (typically a function) from the XBlock translation
@@ -264,9 +264,14 @@ class ModuleI18nService(object):
         we fall-back onto django.utils.translation.ugettext
         """
         print "********** ModuleI18nService.ugettext: {0} **********".format(string)
-        t = gettext.translation('django', "../venvs/edxapp/src/xblock-poll/poll/conf/locale")
+        #t = gettext.translation('django', "../venvs/edxapp/src/xblock-poll/conf/locale")
+        t = gettext.translation('django', "/edx/src/xblock-drag-and-drop-v2/conf/locale")
         _ = t.ugettext
-        return _(string)
+        translated_string = _(string)
+        if string == 'Drag the items onto the image above.':
+            from nose.tools import set_trace; set_trace()
+
+        return translated_string
 
     def strftime(self, *args, **kwargs):
         """

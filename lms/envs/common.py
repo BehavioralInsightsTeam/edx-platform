@@ -924,6 +924,7 @@ STATICI18N_OUTPUT_DIR = "js/i18n"
 
 # Localization strings (e.g. django.po) are under this directory
 LOCALE_PATHS = (REPO_ROOT + '/conf/locale',)  # edx-platform/conf/locale/
+LOCALE_PATHS = ('/edx/src/xblock-drag-and-drop-v2/conf/locale',) + LOCALE_PATHS
 # Messages
 MESSAGE_STORAGE = 'django.contrib.messages.storage.session.SessionStorage'
 
