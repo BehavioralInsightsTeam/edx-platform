@@ -32,10 +32,7 @@ describe('TooltipManager', function () {
     });
 
     showTooltip = function (element) {
-        element.trigger($.Event("mouseover", {
-            pageX: PAGE_X,
-            pageY: PAGE_Y
-        }));
+        element.trigger('mouseenter');
         jasmine.Clock.tick(500);
     };
 
@@ -51,54 +48,51 @@ describe('TooltipManager', function () {
     it('should be shown when mouse is over the element', function () {
         showTooltip(this.element);
         expect($('.tooltip')).toBeVisible();
-        expect($('.tooltip').text()).toBe('some text here.');
+        expect($('.tooltip-content').text()).toBe('some text here.');
     });
 
     it('should be hidden when mouse is out of the element', function () {
         showTooltip(this.element);
         expect($('.tooltip')).toBeVisible();
-        this.element.trigger($.Event("mouseout"));
-        jasmine.Clock.tick(50);
+        this.element.trigger('mouseleave');
+        jasmine.Clock.tick(500);
         expect($('.tooltip')).toBeHidden();
+    });
+
+    it('should stay visible when mouse is over the tooltip', function () {
+        showTooltip(this.element);
+        expect($('.tooltip')).toBeVisible();
+        this.element.trigger('mouseleave');
+        jasmine.Clock.tick(100);
+        this.tooltip.tooltip.trigger('mouseenter');
+        jasmine.Clock.tick(500);
+        expect($('.tooltip')).toBeVisible();
+        this.tooltip.tooltip.trigger('mouseleave');
+        jasmine.Clock.tick(500);
+        expect($('.tooltip')).toBeHidden();
+    });
+
+    it('should be shown when the element gets focus', function () {
+        this.element.trigger('focus');
+        jasmine.Clock.tick(500);
+        expect($('.tooltip')).toBeVisible();
     });
 
     it('should be hidden when user clicks on the element', function () {
         showTooltip(this.element);
         expect($('.tooltip')).toBeVisible();
-        this.element.trigger($.Event("click"));
-        jasmine.Clock.tick(50);
+        this.element.trigger('click');
         expect($('.tooltip')).toBeHidden();
     });
 
     it('can be configured to show when user clicks on the element', function () {
         this.element.attr('data-tooltip-show-on-click', true);
-        this.element.trigger($.Event("click"));
+        this.element.trigger('click');
         expect($('.tooltip')).toBeVisible();
     });
 
     it('can be be triggered manually', function () {
         this.tooltip.openTooltip(this.element);
         expect($('.tooltip')).toBeVisible();
-    });
-
-    it('should moves correctly', function () {
-        showTooltip(this.element);
-        expect($('.tooltip')).toBeVisible();
-        // PAGE_X - 0.5 * WIDTH
-        // 100 - 0.5 * 100 = 50
-        expect(parseInt($('.tooltip').css('left'))).toBe(50);
-        // PAGE_Y - (HEIGHT + 15)
-        // 100 - (100 + 15) = -15
-        expect(parseInt($('.tooltip').css('top'))).toBe(-15);
-        this.element.trigger($.Event("mousemove", {
-            pageX: PAGE_X + DELTA,
-            pageY: PAGE_Y + DELTA
-        }));
-        // PAGE_X + DELTA - 0.5 * WIDTH
-        // 100 + 10 - 0.5 * 100 = 60
-        expect(parseInt($('.tooltip').css('left'))).toBe(60);
-        // PAGE_Y + DELTA - (HEIGHT + 15)
-        // 100 + 10 - (100 + 15) = -5
-        expect(parseInt($('.tooltip').css('top'))).toBe(-5);
     });
 });
