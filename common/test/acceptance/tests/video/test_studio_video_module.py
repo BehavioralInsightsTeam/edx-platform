@@ -234,6 +234,7 @@ class CMSVideoTest(CMSVideoBaseTest):
         And first is private video
         When I reload the page
         Then video controls for all videos are visible
+        And the error message isn't shown
         """
         self._create_course_unit(youtube_stub_config={'youtube_api_private_video': True})
         self.video.create_video()
@@ -248,6 +249,9 @@ class CMSVideoTest(CMSVideoBaseTest):
         self._navigate_to_course_unit_page()
         self.assertTrue(self.video.is_controls_visible())
 
+        # verify that the error message isn't shown by default
+        self.assertFalse(self.video.is_error_message_shown)
+
     def test_captions_shown_correctly(self):
         """
         Scenario: Captions are shown correctly
@@ -255,7 +259,6 @@ class CMSVideoTest(CMSVideoBaseTest):
         Then when I view the video it does show the captions
         """
         self._create_course_unit(subtitles=True)
-
         self.assertTrue(self.video.is_captions_visible())
 
     def test_captions_toggling(self):

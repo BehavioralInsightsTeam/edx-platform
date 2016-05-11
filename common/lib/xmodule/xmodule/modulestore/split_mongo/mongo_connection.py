@@ -27,7 +27,7 @@ from mongodb_proxy import autoretry_read
 from xmodule.exceptions import HeartbeatFailure
 from xmodule.modulestore import BlockData
 from xmodule.modulestore.split_mongo import BlockKey
-from xmodule.mongo_connection import connect_to_mongodb
+from xmodule.mongo_utils import connect_to_mongodb, create_collection_index
 
 
 new_contract('BlockData', BlockData)
@@ -354,6 +354,26 @@ class MongoConnection(object):
             return docs
 
     @autoretry_read()
+    def find_course_blocks_by_id(self, ids, course_context=None):
+        """
+        Find all structures that specified in `ids`. Among the blocks only return block whose type is `course`.
+
+        Arguments:
+            ids (list): A list of structure ids
+        """
+        with TIMER.timer("find_course_blocks_by_id", course_context) as tagger:
+            tagger.measure("requested_ids", len(ids))
+            docs = [
+                structure_from_mongo(structure, course_context)
+                for structure in self.structures.find(
+                    {'_id': {'$in': ids}},
+                    {'blocks': {'$elemMatch': {'block_type': 'course'}}, 'root': 1}
+                )
+            ]
+            tagger.measure("structures", len(docs))
+            return docs
+
+    @autoretry_read()
     def find_structures_derived_from(self, ids, course_context=None):
         """
         Return all structures that were immediately derived from a structure listed in ``ids``.
@@ -526,7 +546,8 @@ class MongoConnection(object):
         This method is intended for use by tests and administrative commands, and not
         to be run during server startup.
         """
-        self.course_index.create_index(
+        create_collection_index(
+            self.course_index,
             [
                 ('org', pymongo.ASCENDING),
                 ('course', pymongo.ASCENDING),

@@ -31,6 +31,7 @@ import shoppingcart
 from certificates import api as certs_api
 from certificates.models import CertificateStatuses, CertificateGenerationConfiguration
 from certificates.tests.factories import GeneratedCertificateFactory
+from commerce.models import CommerceConfiguration
 from course_modes.models import CourseMode
 from course_modes.tests.factories import CourseModeFactory
 from courseware.model_data import set_score
@@ -38,7 +39,10 @@ from courseware.testutils import RenderXBlockTestMixin
 from courseware.tests.factories import StudentModuleFactory
 from courseware.user_state_client import DjangoXBlockUserStateClient
 from edxmako.tests import mako_middleware_process_request
+from lms.djangoapps.commerce.utils import EcommerceService  # pylint: disable=import-error
+from milestones.tests.utils import MilestonesTestCaseMixin
 from openedx.core.djangoapps.self_paced.models import SelfPacedConfiguration
+from openedx.core.lib.gating import api as gating_api
 from student.models import CourseEnrollment
 from student.tests.factories import AdminFactory, UserFactory, CourseEnrollmentFactory
 from util.tests.test_date_utils import fake_ugettext, fake_pgettext
@@ -49,6 +53,8 @@ from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.tests.django_utils import TEST_DATA_MIXED_TOY_MODULESTORE
 from xmodule.modulestore.tests.django_utils import ModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory, check_mongo_calls
+from openedx.core.djangoapps.credit.api import set_credit_requirements
+from openedx.core.djangoapps.credit.models import CreditCourse, CreditProvider
 
 
 @attr('shard_1')
@@ -67,21 +73,21 @@ class TestJumpTo(ModuleStoreTestCase):
         location = self.course_key.make_usage_key(None, 'NoSuchPlace')
         # This is fragile, but unfortunately the problem is that within the LMS we
         # can't use the reverse calls from the CMS
-        jumpto_url = '{0}/{1}/jump_to/{2}'.format('/courses', self.course_key.to_deprecated_string(), location.to_deprecated_string())
+        jumpto_url = '{0}/{1}/jump_to/{2}'.format('/courses', unicode(self.course_key), unicode(location))
         response = self.client.get(jumpto_url)
         self.assertEqual(response.status_code, 404)
 
     @unittest.skip
     def test_jumpto_from_chapter(self):
         location = self.course_key.make_usage_key('chapter', 'Overview')
-        jumpto_url = '{0}/{1}/jump_to/{2}'.format('/courses', self.course_key.to_deprecated_string(), location.to_deprecated_string())
+        jumpto_url = '{0}/{1}/jump_to/{2}'.format('/courses', unicode(self.course_key), unicode(location))
         expected = 'courses/edX/toy/2012_Fall/courseware/Overview/'
         response = self.client.get(jumpto_url)
         self.assertRedirects(response, expected, status_code=302, target_status_code=302)
 
     @unittest.skip
     def test_jumpto_id(self):
-        jumpto_url = '{0}/{1}/jump_to_id/{2}'.format('/courses', self.course_key.to_deprecated_string(), 'Overview')
+        jumpto_url = '{0}/{1}/jump_to_id/{2}'.format('/courses', unicode(self.course_key), 'Overview')
         expected = 'courses/edX/toy/2012_Fall/courseware/Overview/'
         response = self.client.get(jumpto_url)
         self.assertRedirects(response, expected, status_code=302, target_status_code=302)
@@ -171,7 +177,7 @@ class TestJumpTo(ModuleStoreTestCase):
 
     def test_jumpto_id_invalid_location(self):
         location = Location('edX', 'toy', 'NoSuchPlace', None, None, None)
-        jumpto_url = '{0}/{1}/jump_to_id/{2}'.format('/courses', self.course_key.to_deprecated_string(), location.to_deprecated_string())
+        jumpto_url = '{0}/{1}/jump_to_id/{2}'.format('/courses', unicode(self.course_key), unicode(location))
         response = self.client.get(jumpto_url)
         self.assertEqual(response.status_code, 404)
 
@@ -210,25 +216,79 @@ class ViewsTestCase(ModuleStoreTestCase):
         in_cart_span = '<span class="add-to-cart">'
         # don't mock this course due to shopping cart existence checking
         course = CourseFactory.create(org="new", number="unenrolled", display_name="course")
-        request = self.request_factory.get(reverse('about_course', args=[course.id.to_deprecated_string()]))
+        request = self.request_factory.get(reverse('about_course', args=[unicode(course.id)]))
         request.user = AnonymousUser()
         mako_middleware_process_request(request)
-        response = views.course_about(request, course.id.to_deprecated_string())
+        response = views.course_about(request, unicode(course.id))
         self.assertEqual(response.status_code, 200)
         self.assertNotIn(in_cart_span, response.content)
 
         # authenticated user with nothing in cart
         request.user = self.user
-        response = views.course_about(request, course.id.to_deprecated_string())
+        response = views.course_about(request, unicode(course.id))
         self.assertEqual(response.status_code, 200)
         self.assertNotIn(in_cart_span, response.content)
 
         # now add the course to the cart
         cart = shoppingcart.models.Order.get_cart_for_user(self.user)
         shoppingcart.models.PaidCourseRegistration.add_to_order(cart, course.id)
-        response = views.course_about(request, course.id.to_deprecated_string())
+        response = views.course_about(request, unicode(course.id))
         self.assertEqual(response.status_code, 200)
         self.assertIn(in_cart_span, response.content)
+
+    def assert_enrollment_link_present(self, is_anonymous, _id=False):
+        """
+        Prepare ecommerce checkout data and assert if the ecommerce link is contained in the response.
+
+        Arguments:
+            is_anonymous(bool): Tell the method to use an anonymous user or the logged in one.
+            _id(bool): Tell the method to either expect an id in the href or not.
+
+        """
+        checkout_page = '/test_basket/'
+        sku = 'TEST123'
+        CommerceConfiguration.objects.create(
+            checkout_on_ecommerce_service=True,
+            single_course_checkout_page=checkout_page
+        )
+        course = CourseFactory.create()
+        CourseModeFactory(mode_slug=CourseMode.PROFESSIONAL, course_id=course.id, sku=sku, min_price=1)
+
+        request = self.request_factory.get(reverse('about_course', args=[unicode(course.id)]))
+        request.user = AnonymousUser() if is_anonymous else self.user
+        mako_middleware_process_request(request)
+
+        # Construct the link for each of the four possibilities:
+        #      (1) shopping cart is disabled and the user is not logged in
+        #      (2) shopping cart is disabled and the user is logged in
+        #      (3) shopping cart is enabled and the user is not logged in
+        #      (4) shopping cart is enabled and the user is logged in
+        href = '<a href="{}?{}" class="add-to-cart"{}'.format(
+            checkout_page,
+            'sku=TEST123',
+            ' id="">' if _id else ">"
+        )
+        response = views.course_about(request, unicode(course.id))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(href, response.content)
+
+    @ddt.data(True, False)
+    def test_ecommerce_checkout(self, is_anonymous):
+        if not is_anonymous:
+            self.assert_enrollment_link_present(is_anonymous=is_anonymous)
+        else:
+            request = self.request_factory.get("foo")
+            self.assertEqual(EcommerceService().is_enabled(AnonymousUser()), False)
+
+    @ddt.data(True, False)
+    @unittest.skipUnless(settings.FEATURES.get('ENABLE_SHOPPING_CART'), 'Shopping Cart not enabled in settings')
+    @patch.dict(settings.FEATURES, {'ENABLE_PAID_COURSE_REGISTRATION': True})
+    def test_ecommerce_checkout_shopping_cart_enabled(self, is_anonymous):
+        if not is_anonymous:
+            self.assert_enrollment_link_present(is_anonymous=is_anonymous, _id=True)
+        else:
+            request = self.request_factory.get("foo")
+            self.assertEqual(EcommerceService().is_enabled(AnonymousUser()), False)
 
     def test_user_groups(self):
         # depreciated function
@@ -266,7 +326,7 @@ class ViewsTestCase(ModuleStoreTestCase):
     def test_index_invalid_position(self):
         request_url = '/'.join([
             '/courses',
-            self.course.id.to_deprecated_string(),
+            unicode(self.course.id),
             'courseware',
             self.chapter.location.name,
             self.section.location.name,
@@ -279,7 +339,7 @@ class ViewsTestCase(ModuleStoreTestCase):
     def test_unicode_handling_in_url(self):
         url_parts = [
             '/courses',
-            self.course.id.to_deprecated_string(),
+            unicode(self.course.id),
             'courseware',
             self.chapter.location.name,
             self.section.location.name,
@@ -371,9 +431,9 @@ class ViewsTestCase(ModuleStoreTestCase):
         self.client.login(username=admin.username, password='test')
 
         url = reverse('submission_history', kwargs={
-            'course_id': self.course_key.to_deprecated_string(),
+            'course_id': unicode(self.course_key),
             'student_username': 'dummy',
-            'location': self.component.location.to_deprecated_string(),
+            'location': unicode(self.component.location),
         })
         response = self.client.get(url)
         # Tests that we do not get an "Invalid x" response when passing correct arguments to view
@@ -387,7 +447,7 @@ class ViewsTestCase(ModuleStoreTestCase):
 
         # try it with an existing user and a malicious location
         url = reverse('submission_history', kwargs={
-            'course_id': self.course_key.to_deprecated_string(),
+            'course_id': unicode(self.course_key),
             'student_username': 'dummy',
             'location': '<script>alert("hello");</script>'
         })
@@ -396,7 +456,7 @@ class ViewsTestCase(ModuleStoreTestCase):
 
         # try it with a malicious user and a non-existent location
         url = reverse('submission_history', kwargs={
-            'course_id': self.course_key.to_deprecated_string(),
+            'course_id': unicode(self.course_key),
             'student_username': '<script>alert("hello");</script>',
             'location': 'dummy'
         })
@@ -695,7 +755,7 @@ class TestProgressDueDate(BaseDueDateTests):
         """ Returns the HTML for the progress page """
 
         mako_middleware_process_request(self.request)
-        return views.progress(self.request, course_id=course.id.to_deprecated_string(), student_id=self.user.id).content
+        return views.progress(self.request, course_id=unicode(course.id), student_id=self.user.id).content
 
 
 class TestAccordionDueDate(BaseDueDateTests):
@@ -740,7 +800,7 @@ class StartDateTests(ModuleStoreTestCase):
         """
         Get the text of the /about page for the course.
         """
-        text = views.course_about(self.request, course_key.to_deprecated_string()).content
+        text = views.course_about(self.request, unicode(course_key)).content
         return text
 
     @patch('util.date_utils.pgettext', fake_pgettext(translations={
@@ -795,7 +855,7 @@ class ProgressPageTests(ModuleStoreTestCase):
         )
 
         self.course = modulestore().get_course(course.id)
-        CourseEnrollmentFactory(user=self.user, course_id=self.course.id)
+        CourseEnrollmentFactory(user=self.user, course_id=self.course.id, mode=CourseMode.HONOR)
 
         self.chapter = ItemFactory.create(category='chapter', parent_location=self.course.location)
         self.section = ItemFactory.create(category='sequential', parent_location=self.chapter.location)
@@ -814,7 +874,7 @@ class ProgressPageTests(ModuleStoreTestCase):
     def test_pure_ungraded_xblock(self):
         ItemFactory.create(category='acid', parent_location=self.vertical.location)
 
-        resp = views.progress(self.request, course_id=self.course.id.to_deprecated_string())
+        resp = views.progress(self.request, course_id=unicode(self.course.id))
         self.assertEqual(resp.status_code, 200)
 
     @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
@@ -843,13 +903,47 @@ class ProgressPageTests(ModuleStoreTestCase):
 
         # Enroll student into course
         CourseEnrollment.enroll(self.user, self.course.id)
-        resp = views.progress(self.request, course_id=self.course.id.to_deprecated_string(), student_id=self.user.id)
+        resp = views.progress(self.request, course_id=unicode(self.course.id), student_id=self.user.id)
         # Assert that valid 'student_id' returns 200 status
         self.assertEqual(resp.status_code, 200)
 
-    def test_non_asci_grade_cutoffs(self):
-        resp = views.progress(self.request, course_id=self.course.id.to_deprecated_string())
+    @ddt.data(ModuleStoreEnum.Type.mongo, ModuleStoreEnum.Type.split)
+    def test_unenrolled_student_progress_for_credit_course(self, default_store):
+        """
+         Test that student progress page does not break while checking for an unenrolled student.
 
+         Scenario: When instructor checks the progress of a student who is not enrolled in credit course.
+         It should return 200 response.
+        """
+        # Create a new course, a user which will not be enrolled in course, admin user for staff access
+        course = CourseFactory.create(default_store=default_store)
+        not_enrolled_user = UserFactory.create()
+        self.request.user = AdminFactory.create()
+
+        # Create and enable Credit course
+        CreditCourse.objects.create(course_key=course.id, enabled=True)
+
+        # Configure a credit provider for the course
+        CreditProvider.objects.create(
+            provider_id="ASU",
+            enable_integration=True,
+            provider_url="https://credit.example.com/request"
+        )
+
+        requirements = [{
+            "namespace": "grade",
+            "name": "grade",
+            "display_name": "Grade",
+            "criteria": {"min_grade": 0.52},
+        }]
+        # Add a single credit requirement (final grade)
+        set_credit_requirements(course.id, requirements)
+
+        resp = views.progress(self.request, course_id=unicode(course.id), student_id=not_enrolled_user.id)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_non_ascii_grade_cutoffs(self):
+        resp = views.progress(self.request, course_id=unicode(self.course.id))
         self.assertEqual(resp.status_code, 200)
 
     def test_generate_cert_config(self):
@@ -948,7 +1042,7 @@ class ProgressPageTests(ModuleStoreTestCase):
         self.assertContains(resp, u"Download Your Certificate")
 
     @ddt.data(
-        *itertools.product(((38, 4, True), (38, 4, False)), (True, False))
+        *itertools.product(((41, 4, True), (41, 4, False)), (True, False))
     )
     @ddt.unpack
     def test_query_counts(self, (sql_calls, mongo_calls, self_paced), self_paced_enabled):
@@ -958,6 +1052,27 @@ class ProgressPageTests(ModuleStoreTestCase):
         with self.assertNumQueries(sql_calls), check_mongo_calls(mongo_calls):
             resp = views.progress(self.request, course_id=unicode(self.course.id))
         self.assertEqual(resp.status_code, 200)
+
+    @patch('courseware.grades.grade', Mock(return_value={
+        'grade': 'Pass', 'percent': 0.75, 'section_breakdown': [], 'grade_breakdown': []
+    }))
+    @ddt.data(
+        (CourseMode.AUDIT, False),
+        (CourseMode.HONOR, True),
+        (CourseMode.VERIFIED, True),
+        (CourseMode.PROFESSIONAL, True),
+        (CourseMode.NO_ID_PROFESSIONAL_MODE, True),
+        (CourseMode.CREDIT_MODE, True),
+    )
+    @ddt.unpack
+    def test_show_certificate_request_button(self, course_mode, show_button):
+        """Verify that the Request Certificate is not displayed in audit mode."""
+        CertificateGenerationConfiguration(enabled=True).save()
+        certs_api.set_cert_generation_enabled(self.course.id, True)
+        CourseEnrollment.enroll(self.user, self.course.id, mode=course_mode)
+
+        resp = views.progress(self.request, course_id=unicode(self.course.id))
+        self.assertEqual(show_button, 'Request Certificate' in resp.content)
 
 
 @attr('shard_1')
@@ -1261,6 +1376,55 @@ class TestIndexView(ModuleStoreTestCase):
 
         response = views.index(request, unicode(course.id), chapter=chapter.url_name, section=section.url_name)
         self.assertIn("Activate Block ID: test_block_id", response.content)
+
+
+class TestIndexViewWithGating(ModuleStoreTestCase, MilestonesTestCaseMixin):
+    """
+    Test the index view for a course with gated content
+    """
+    def setUp(self):
+        """
+        Set up the initial test data
+        """
+        super(TestIndexViewWithGating, self).setUp()
+
+        self.user = UserFactory()
+        self.course = CourseFactory.create()
+        self.course.enable_subsection_gating = True
+        self.course.save()
+        self.store.update_item(self.course, 0)
+        self.chapter = ItemFactory.create(parent=self.course, category="chapter", display_name="Chapter")
+        self.open_seq = ItemFactory.create(parent=self.chapter, category='sequential', display_name="Open Sequential")
+        self.gated_seq = ItemFactory.create(parent=self.chapter, category='sequential', display_name="Gated Sequential")
+        gating_api.add_prerequisite(self.course.id, self.open_seq.location)
+        gating_api.set_required_content(self.course.id, self.gated_seq.location, self.open_seq.location, 100)
+
+        CourseEnrollmentFactory(user=self.user, course_id=self.course.id)
+
+    def test_index_with_gated_sequential(self):
+        """
+        Test index view with a gated sequential raises Http404
+        """
+        request = RequestFactory().get(
+            reverse(
+                'courseware_section',
+                kwargs={
+                    'course_id': unicode(self.course.id),
+                    'chapter': self.chapter.url_name,
+                    'section': self.gated_seq.url_name,
+                }
+            )
+        )
+        request.user = self.user
+        mako_middleware_process_request(request)
+
+        with self.assertRaises(Http404):
+            __ = views.index(
+                request,
+                unicode(self.course.id),
+                chapter=self.chapter.url_name,
+                section=self.gated_seq.url_name
+            )
 
 
 class TestRenderXBlock(RenderXBlockTestMixin, ModuleStoreTestCase):

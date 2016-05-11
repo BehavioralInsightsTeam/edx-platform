@@ -1,4 +1,6 @@
 describe 'Problem', ->
+  problem_content_default = readFixtures('problem_content.html')
+
   beforeEach ->
     # Stub MathJax
     window.MathJax =
@@ -20,7 +22,7 @@ describe 'Problem', ->
 
     spyOn Logger, 'log'
     spyOn($.fn, 'load').andCallFake (url, callback) ->
-      $(@).html readFixtures('problem_content.html')
+      $(@).html problem_content_default
       callback()
 
   describe 'constructor', ->
@@ -96,12 +98,26 @@ describe 'Problem', ->
         @problem.renderProgressState()
         expect(@problem.$('.problem-progress').html()).toEqual "(1 point possible)"
 
+      it 'displays the number of points possible when rendering happens with the content', ->
+        @problem.el.data('progress_status', 'none')
+        @problem.el.data('progress_detail', '0/2')
+        expect(@problem.$('.problem-progress').html()).toEqual ""
+        @problem.render(problem_content_default)
+        expect(@problem.$('.problem-progress').html()).toEqual "(2 points possible)"
+
     describe 'with any other valid status', ->
       it 'reports the current score', ->
         @problem.el.data('progress_status', 'foo')
         @problem.el.data('progress_detail', '1/1')
         @problem.renderProgressState()
         expect(@problem.$('.problem-progress').html()).toEqual "(1/1 point)"
+
+      it 'shows current score when rendering happens with the content', ->
+        @problem.el.data('progress_status', 'test status')
+        @problem.el.data('progress_detail', '2/2')
+        expect(@problem.$('.problem-progress').html()).toEqual ""
+        @problem.render(problem_content_default)
+        expect(@problem.$('.problem-progress').html()).toEqual "(2/2 points)"
 
   describe 'render', ->
     beforeEach ->
@@ -198,17 +214,55 @@ describe 'Problem', ->
         expect(@problem.el.html()).toEqual 'Incorrect!'
         expect(window.SR.readElts).toHaveBeenCalled()
 
+    it 'tests if all the capa buttons are disabled while checking', ->
+      runs ->
+        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+          callback(success: 'incorrect', contents: 'Incorrect!')
+          promise =
+            always: (callable) -> callable()
+            done: (callable) -> callable()
+        spyOn @problem, 'enableAllButtons'
+        @problem.check()
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith false, true
+      waitsFor (->
+        return jQuery.active == 0
+      ), "jQuery requests finished", 1000
+
+      runs ->
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith true, true
+
+    it 'tests the expected change in text of check button', ->
+      runs ->
+        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+          promise =
+            always: (callable) -> callable()
+            done: (callable) -> callable()
+        spyOn @problem.checkButtonLabel, 'text'
+        @problem.check()
+        expect(@problem.checkButtonLabel.text).toHaveBeenCalledWith 'Checking...'
+      waitsFor (->
+        return jQuery.active == 0
+      ), "jQuery requests finished", 1000
+
+      runs ->
+        expect(@problem.checkButtonLabel.text).toHaveBeenCalledWith 'Check'
+
   describe 'reset', ->
     beforeEach ->
       @problem = new Problem($('.xblock-student_view'))
 
     it 'log the problem_reset event', ->
+      spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+        promise =
+          always: (callable) -> callable()
       @problem.answers = 'foo=1&bar=2'
       @problem.reset()
       expect(Logger.log).toHaveBeenCalledWith 'problem_reset', 'foo=1&bar=2'
 
     it 'POST to the problem reset page', ->
-      spyOn $, 'postWithPrefix'
+      spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+        promise =
+          always: (callable) -> callable()
       @problem.reset()
       expect($.postWithPrefix).toHaveBeenCalledWith '/problem/Problem1/problem_reset',
           { id: 'i4x://edX/101/problem/Problem1' }, jasmine.any(Function)
@@ -216,8 +270,27 @@ describe 'Problem', ->
     it 'render the returned content', ->
       spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
         callback html: "Reset!"
+        promise =
+            always: (callable) -> callable()
       @problem.reset()
       expect(@problem.el.html()).toEqual 'Reset!'
+
+    it 'tests if all the buttons are disabled and the text of check button remains same while resetting', ->
+      runs ->
+        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+          promise =
+            always: (callable) -> callable()
+        spyOn @problem, 'enableAllButtons'
+        @problem.reset()
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith false, false
+        expect(@problem.checkButtonLabel).toHaveText 'Check'
+      waitsFor (->
+        return jQuery.active == 0
+      ), "jQuery requests finished", 1000
+
+      runs ->
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith true, false
+        expect(@problem.checkButtonLabel).toHaveText 'Check'
 
   describe 'show', ->
     beforeEach ->
@@ -518,18 +591,26 @@ describe 'Problem', ->
       @problem.answers = 'foo=1&bar=2'
 
     it 'log the problem_save event', ->
+      spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+        promise =
+          always: (callable) -> callable()
       @problem.save()
       expect(Logger.log).toHaveBeenCalledWith 'problem_save', 'foo=1&bar=2'
 
     it 'POST to save problem', ->
-      spyOn $, 'postWithPrefix'
+      spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+        promise =
+          always: (callable) -> callable()
       @problem.save()
       expect($.postWithPrefix).toHaveBeenCalledWith '/problem/Problem1/problem_save',
           'foo=1&bar=2', jasmine.any(Function)
 
     it 'reads the save message', ->
       runs ->
-        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) -> callback(success: 'OK')
+        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+          callback(success: 'OK')
+          promise =
+            always: (callable) -> callable()
         @problem.save()
       waitsFor (->
         return jQuery.active == 0
@@ -537,6 +618,24 @@ describe 'Problem', ->
 
       runs ->
         expect(window.SR.readElts).toHaveBeenCalled()
+
+    it 'tests if all the buttons are disabled and the text of check button does not change while saving.', ->
+      runs ->
+        spyOn($, 'postWithPrefix').andCallFake (url, answers, callback) ->
+          callback(success: 'OK')
+          promise =
+            always: (callable) -> callable()
+        spyOn @problem, 'enableAllButtons'
+        @problem.save()
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith false, false
+        expect(@problem.checkButtonLabel).toHaveText 'Check'
+      waitsFor (->
+        return jQuery.active == 0
+      ), "jQuery requests finished", 1000
+
+      runs ->
+        expect(@problem.enableAllButtons).toHaveBeenCalledWith true, false
+        expect(@problem.checkButtonLabel).toHaveText 'Check'
 
   describe 'refreshMath', ->
     beforeEach ->

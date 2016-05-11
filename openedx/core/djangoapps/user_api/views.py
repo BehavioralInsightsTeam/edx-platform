@@ -1,5 +1,6 @@
 """HTTP end-points for the User API. """
 import copy
+
 from opaque_keys import InvalidKeyError
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -19,11 +20,13 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import ParseError
 from django_countries import countries
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
+from microsite_configuration import microsite
 
 from openedx.core.lib.api.permissions import ApiKeyHeaderPermission
 import third_party_auth
 from django_comment_common.models import Role
 from edxmako.shortcuts import marketing_link
+from student.forms import get_registration_extension_form
 from student.views import create_account_with_params
 from student.cookies import set_logged_in_cookies
 from openedx.core.lib.api.authentication import SessionAuthenticationAllowInactiveUser
@@ -158,6 +161,7 @@ class RegistrationView(APIView):
 
     EXTRA_FIELDS = [
         "city",
+        "state",
         "country",
         "gender",
         "year_of_birth",
@@ -185,7 +189,9 @@ class RegistrationView(APIView):
 
         # Backwards compatibility: Honor code is required by default, unless
         # explicitly set to "optional" in Django settings.
-        self._extra_fields_setting = copy.deepcopy(settings.REGISTRATION_EXTRA_FIELDS)
+        self._extra_fields_setting = copy.deepcopy(microsite.get_value('REGISTRATION_EXTRA_FIELDS'))
+        if not self._extra_fields_setting:
+            self._extra_fields_setting = copy.deepcopy(settings.REGISTRATION_EXTRA_FIELDS)
         self._extra_fields_setting["honor_code"] = self._extra_fields_setting.get("honor_code", "required")
 
         # Check that the setting is configured correctly
@@ -228,6 +234,37 @@ class RegistrationView(APIView):
         # Default fields are always required
         for field_name in self.DEFAULT_FIELDS:
             self.field_handlers[field_name](form_desc, required=True)
+
+        # Custom form fields can be added via the form set in settings.REGISTRATION_EXTENSION_FORM
+        custom_form = get_registration_extension_form()
+
+        if custom_form:
+            for field_name, field in custom_form.fields.items():
+                restrictions = {}
+                if getattr(field, 'max_length', None):
+                    restrictions['max_length'] = field.max_length
+                if getattr(field, 'min_length', None):
+                    restrictions['min_length'] = field.min_length
+                field_options = getattr(
+                    getattr(custom_form, 'Meta', None), 'serialization_options', {}
+                ).get(field_name, {})
+                field_type = field_options.get('field_type', FormDescription.FIELD_TYPE_MAP.get(field.__class__))
+                if not field_type:
+                    raise ImproperlyConfigured(
+                        "Field type '{}' not recognized for registration extension field '{}'.".format(
+                            field_type,
+                            field_name
+                        )
+                    )
+                form_desc.add_field(
+                    field_name, label=field.label,
+                    default=field_options.get('default'),
+                    field_type=field_options.get('field_type', FormDescription.FIELD_TYPE_MAP.get(field.__class__)),
+                    placeholder=field.initial, instructions=field.help_text, required=field.required,
+                    restrictions=restrictions,
+                    options=getattr(field, 'choices', None), error_messages=field.error_messages,
+                    include_default_option=field_options.get('include_default_option'),
+                )
 
         # Extra fields configured in Django settings
         # may be required, optional, or hidden
@@ -572,6 +609,26 @@ class RegistrationView(APIView):
         form_desc.add_field(
             "city",
             label=city_label,
+            required=required
+        )
+
+    def _add_state_field(self, form_desc, required=False):
+        """Add a State/Province/Region field to a form description.
+
+        Arguments:
+            form_desc: A form description
+
+        Keyword Arguments:
+            required (bool): Whether this field is required; defaults to False
+
+        """
+        # Translators: This label appears above a field on the registration form
+        # which allows the user to input the State/Province/Region in which they live.
+        state_label = _(u"State/Province/Region")
+
+        form_desc.add_field(
+            "state",
+            label=state_label,
             required=required
         )
 

@@ -522,9 +522,9 @@ class PayAndVerifyView(View):
             if mode.min_price > 0 and not CourseMode.is_credit_mode(mode):
                 return mode
 
-        # Otherwise, find the first expired mode
+        # Otherwise, find the first non credit expired paid mode
         for mode in all_modes[course_key]:
-            if mode.min_price > 0:
+            if mode.min_price > 0 and not CourseMode.is_credit_mode(mode):
                 return mode
 
         # Otherwise, return None and so the view knows to respond with a 404.
@@ -872,6 +872,11 @@ class SubmitPhotosView(View):
         face_image, photo_id_image, response = self._decode_image_data(
             params["face_image"], params.get("photo_id_image")
         )
+
+        # If we have a photo_id we do not want use the initial verification image.
+        if photo_id_image is not None:
+            initial_verification = None
+
         if response is not None:
             return response
 
@@ -1150,7 +1155,7 @@ def _compose_message_reverification_email(
         subject = "Re-verification Status"
         context = {
             "status": status,
-            "course_name": course.display_name_with_default,
+            "course_name": course.display_name_with_default_escaped,
             "assessment": reverification_block.related_assessment
         }
 
@@ -1431,7 +1436,7 @@ class InCourseReverifyView(View):
 
         context = {
             'course_key': unicode(course_key),
-            'course_name': course.display_name_with_default,
+            'course_name': course.display_name_with_default_escaped,
             'checkpoint_name': checkpoint.checkpoint_name,
             'platform_name': settings.PLATFORM_NAME,
             'usage_id': usage_id,

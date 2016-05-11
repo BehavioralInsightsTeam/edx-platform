@@ -52,6 +52,7 @@ MOCK_MODULES = [
     'xmodule.modulestore',
     'xmodule.modulestore.exceptions',
     'xmodule.modulestore.django',
+    'xmodule.fields',
     'courseware.models',
     'milestones',
     'milestones.api',
@@ -113,9 +114,6 @@ MOCK_MODULES = [
     'xmodule.modulestore.mongo.base',
     'edxval',
     'edxval.api',
-    'model_utils',
-    'model_utils.models',
-    'model_utils.managers',
     'certificates',
     'certificates.models',
     'certificates.models.GeneratedCertificate',
@@ -145,6 +143,14 @@ MOCK_MODULES = [
     'rest_framework_oauth.authentication',
     'certificates.api',
     'courseware.date_summary',
+    'rest_framework_jwt',
+    'rest_framework_jwt.authentication',
+    'microsite_configuration',
+    'xmodule.assetstore',
+    'xmodule.assetstore.assetmgr',
+    'xmodule.assetstore.assetmgr.AssetManager',
+    'xmodule.contentstore.django',
+    'piexif',
 ]
 
 for mod_name in MOCK_MODULES:

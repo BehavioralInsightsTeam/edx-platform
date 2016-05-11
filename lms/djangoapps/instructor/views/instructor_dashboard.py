@@ -43,6 +43,7 @@ from certificates.models import (
     GeneratedCertificate,
     CertificateStatuses,
     CertificateGenerationHistory,
+    CertificateInvalidation,
 )
 from certificates import api as certs_api
 from util.date_utils import get_default_time_display
@@ -184,6 +185,13 @@ def instructor_dashboard_2(request, course_id):
         kwargs={'course_id': unicode(course_key)}
     )
 
+    certificate_invalidation_view_url = reverse(  # pylint: disable=invalid-name
+        'certificate_invalidation_view',
+        kwargs={'course_id': unicode(course_key)}
+    )
+
+    certificate_invalidations = CertificateInvalidation.get_certificate_invalidations(course_key)
+
     context = {
         'course': course,
         'studio_url': get_studio_url(course, 'course'),
@@ -191,12 +199,12 @@ def instructor_dashboard_2(request, course_id):
         'disable_buttons': disable_buttons,
         'analytics_dashboard_message': analytics_dashboard_message,
         'certificate_white_list': certificate_white_list,
+        'certificate_invalidations': certificate_invalidations,
         'generate_certificate_exceptions_url': generate_certificate_exceptions_url,
         'generate_bulk_certificate_exceptions_url': generate_bulk_certificate_exceptions_url,
-        'certificate_exception_view_url': certificate_exception_view_url
+        'certificate_exception_view_url': certificate_exception_view_url,
+        'certificate_invalidation_view_url': certificate_invalidation_view_url,
     }
-    if settings.FEATURES['ENABLE_INSTRUCTOR_LEGACY_DASHBOARD']:
-        context['old_dashboard_url'] = reverse('instructor_dashboard_legacy', kwargs={'course_id': unicode(course_key)})
 
     return render_to_response('instructor/instructor_dashboard_2/instructor_dashboard_2.html', context)
 
@@ -324,7 +332,8 @@ def _section_certificates(course):
         'active_certificate': certs_api.get_active_web_certificate(course),
         'certificate_statuses_with_count': certificate_statuses_with_count,
         'status': CertificateStatuses,
-        'certificate_generation_history': CertificateGenerationHistory.objects.filter(course_id=course.id),
+        'certificate_generation_history':
+            CertificateGenerationHistory.objects.filter(course_id=course.id).order_by("-created"),
         'urls': {
             'generate_example_certificates': reverse(
                 'generate_example_certificates',
@@ -558,6 +567,7 @@ def _section_data_download(course, access):
         'problem_grade_report_url': reverse('problem_grade_report', kwargs={'course_id': unicode(course_key)}),
         'course_has_survey': True if course.course_survey_name else False,
         'course_survey_results_url': reverse('get_course_survey_results', kwargs={'course_id': unicode(course_key)}),
+        'export_ora2_data_url': reverse('export_ora2_data', kwargs={'course_id': unicode(course_key)}),
     }
     return section_data
 
@@ -622,21 +632,12 @@ def _get_dashboard_link(course_key):
 
 def _section_analytics(course, access):
     """ Provide data for the corresponding dashboard section """
-    course_key = course.id
-    analytics_dashboard_url = '{0}/courses/{1}'.format(settings.ANALYTICS_DASHBOARD_URL, unicode(course_key))
-    link_start = "<a href=\"{}\" target=\"_blank\">".format(analytics_dashboard_url)
-    insights_message = _("For analytics about your course, go to {analytics_dashboard_name}.")
-
-    insights_message = insights_message.format(
-        analytics_dashboard_name=u'{0}{1}</a>'.format(link_start, settings.ANALYTICS_DASHBOARD_NAME)
-    )
     section_data = {
         'section_key': 'instructor_analytics',
         'section_display_name': _('Analytics'),
         'access': access,
-        'insights_message': insights_message,
+        'course_id': unicode(course.id),
     }
-
     return section_data
 
 

@@ -44,6 +44,7 @@ from xmodule.modulestore.django import modulestore
 from xmodule.modulestore.exceptions import ItemNotFoundError
 from xmodule_django.models import CourseKeyField
 
+from microsite_configuration.templatetags.microsite import platform_name
 
 log = logging.getLogger(__name__)
 
@@ -319,7 +320,7 @@ class PhotoVerification(StatusModel):
             if attempt.created_at < cls._earliest_allowed_date():
                 return (
                     'expired',
-                    _("Your {platform_name} verification has expired.").format(platform_name=settings.PLATFORM_NAME)
+                    _("Your {platform_name} verification has expired.").format(platform_name=platform_name())
                 )
 
             # If someone is denied their original verification attempt, they can try to reverify.
@@ -592,18 +593,22 @@ class SoftwareSecurePhotoVerification(PhotoVerification):
     copy_id_photo_from = models.ForeignKey("self", null=True, blank=True)
 
     @classmethod
-    def get_initial_verification(cls, user):
+    def get_initial_verification(cls, user, earliest_allowed_date=None):
         """Get initial verification for a user with the 'photo_id_key'.
 
         Arguments:
             user(User): user object
+            earliest_allowed_date(datetime): override expiration date for initial verification
 
         Return:
-            SoftwareSecurePhotoVerification (object)
+            SoftwareSecurePhotoVerification (object) or None
         """
         init_verification = cls.objects.filter(
             user=user,
-            status__in=["submitted", "approved"]
+            status__in=["submitted", "approved"],
+            created_at__gte=(
+                earliest_allowed_date or cls._earliest_allowed_date()
+            )
         ).exclude(photo_id_key='')
 
         return init_verification.latest('created_at') if init_verification.exists() else None

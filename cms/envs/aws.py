@@ -101,6 +101,9 @@ if STATIC_URL_BASE:
         STATIC_URL += "/"
     STATIC_URL += EDX_PLATFORM_REVISION + "/"
 
+# DEFAULT_COURSE_ABOUT_IMAGE_URL specifies the default image to show for courses that don't provide one
+DEFAULT_COURSE_ABOUT_IMAGE_URL = ENV_TOKENS.get('DEFAULT_COURSE_ABOUT_IMAGE_URL', DEFAULT_COURSE_ABOUT_IMAGE_URL)
+
 # GITHUB_REPO_ROOT is the base directory
 # for course data
 GITHUB_REPO_ROOT = ENV_TOKENS.get('GITHUB_REPO_ROOT', GITHUB_REPO_ROOT)
@@ -150,6 +153,8 @@ SESSION_SAVE_EVERY_REQUEST = ENV_TOKENS.get('SESSION_SAVE_EVERY_REQUEST', SESSIO
 # social sharing settings
 SOCIAL_SHARING_SETTINGS = ENV_TOKENS.get('SOCIAL_SHARING_SETTINGS', SOCIAL_SHARING_SETTINGS)
 
+REGISTRATION_EMAIL_PATTERNS_ALLOWED = ENV_TOKENS.get('REGISTRATION_EMAIL_PATTERNS_ALLOWED')
+
 # allow for environments to specify what cookie name our login subsystem should use
 # this is to fix a bug regarding simultaneous logins between edx.org and edge.edx.org which can
 # happen with some browsers (e.g. Firefox)
@@ -170,6 +175,14 @@ ADMINS = ENV_TOKENS.get('ADMINS', ADMINS)
 SERVER_EMAIL = ENV_TOKENS.get('SERVER_EMAIL', SERVER_EMAIL)
 MKTG_URLS = ENV_TOKENS.get('MKTG_URLS', MKTG_URLS)
 TECH_SUPPORT_EMAIL = ENV_TOKENS.get('TECH_SUPPORT_EMAIL', TECH_SUPPORT_EMAIL)
+
+for name, value in ENV_TOKENS.get("CODE_JAIL", {}).items():
+    oldvalue = CODE_JAIL.get(name)
+    if isinstance(oldvalue, dict):
+        for subname, subvalue in value.items():
+            oldvalue[subname] = subvalue
+    else:
+        CODE_JAIL[name] = value
 
 COURSES_WITH_UNSAFE_CODE = ENV_TOKENS.get("COURSES_WITH_UNSAFE_CODE", [])
 
@@ -269,13 +282,18 @@ else:
 
 DATABASES = AUTH_TOKENS['DATABASES']
 
-# Enable automatic transaction management on all databases
-# https://docs.djangoproject.com/en/1.8/topics/db/transactions/#tying-transactions-to-http-requests
-# This needs to be true for all databases
-for database_name in DATABASES:
-    DATABASES[database_name]['ATOMIC_REQUESTS'] = True
-
 MODULESTORE = convert_module_store_setting_if_needed(AUTH_TOKENS.get('MODULESTORE', MODULESTORE))
+
+MODULESTORE_FIELD_OVERRIDE_PROVIDERS = ENV_TOKENS.get(
+    'MODULESTORE_FIELD_OVERRIDE_PROVIDERS',
+    MODULESTORE_FIELD_OVERRIDE_PROVIDERS
+)
+
+XBLOCK_FIELD_DATA_WRAPPERS = ENV_TOKENS.get(
+    'XBLOCK_FIELD_DATA_WRAPPERS',
+    XBLOCK_FIELD_DATA_WRAPPERS
+)
+
 CONTENTSTORE = AUTH_TOKENS['CONTENTSTORE']
 DOC_STORE_CONFIG = AUTH_TOKENS['DOC_STORE_CONFIG']
 # Datadog for events!
@@ -306,15 +324,11 @@ EVENT_TRACKING_BACKENDS['tracking_logs']['OPTIONS']['backends'].update(AUTH_TOKE
 EVENT_TRACKING_BACKENDS['segmentio']['OPTIONS']['processors'][0]['OPTIONS']['whitelist'].extend(
     AUTH_TOKENS.get("EVENT_TRACKING_SEGMENTIO_EMIT_WHITELIST", []))
 
-SUBDOMAIN_BRANDING = ENV_TOKENS.get('SUBDOMAIN_BRANDING', {})
 VIRTUAL_UNIVERSITIES = ENV_TOKENS.get('VIRTUAL_UNIVERSITIES', [])
 
 ##### ACCOUNT LOCKOUT DEFAULT PARAMETERS #####
 MAX_FAILED_LOGIN_ATTEMPTS_ALLOWED = ENV_TOKENS.get("MAX_FAILED_LOGIN_ATTEMPTS_ALLOWED", 5)
 MAX_FAILED_LOGIN_ATTEMPTS_LOCKOUT_PERIOD_SECS = ENV_TOKENS.get("MAX_FAILED_LOGIN_ATTEMPTS_LOCKOUT_PERIOD_SECS", 15 * 60)
-
-MICROSITE_CONFIGURATION = ENV_TOKENS.get('MICROSITE_CONFIGURATION', {})
-MICROSITE_ROOT_DIR = path(ENV_TOKENS.get('MICROSITE_ROOT_DIR', ''))
 
 #### PASSWORD POLICY SETTINGS #####
 PASSWORD_MIN_LENGTH = ENV_TOKENS.get("PASSWORD_MIN_LENGTH")
@@ -334,7 +348,6 @@ ADVANCED_SECURITY_CONFIG = ENV_TOKENS.get('ADVANCED_SECURITY_CONFIG', {})
 
 ################ ADVANCED COMPONENT/PROBLEM TYPES ###############
 
-ADVANCED_COMPONENT_TYPES = ENV_TOKENS.get('ADVANCED_COMPONENT_TYPES', ADVANCED_COMPONENT_TYPES)
 ADVANCED_PROBLEM_TYPES = ENV_TOKENS.get('ADVANCED_PROBLEM_TYPES', ADVANCED_PROBLEM_TYPES)
 DEPRECATED_ADVANCED_COMPONENT_TYPES = ENV_TOKENS.get(
     'DEPRECATED_ADVANCED_COMPONENT_TYPES', DEPRECATED_ADVANCED_COMPONENT_TYPES
@@ -366,7 +379,27 @@ XBLOCK_SETTINGS.setdefault("VideoModule", {})['YOUTUBE_API_KEY'] = AUTH_TOKENS.g
 PROCTORING_BACKEND_PROVIDER = AUTH_TOKENS.get("PROCTORING_BACKEND_PROVIDER", PROCTORING_BACKEND_PROVIDER)
 PROCTORING_SETTINGS = ENV_TOKENS.get("PROCTORING_SETTINGS", PROCTORING_SETTINGS)
 
+################# MICROSITE ####################
+# microsite specific configurations.
+MICROSITE_CONFIGURATION = ENV_TOKENS.get('MICROSITE_CONFIGURATION', {})
+MICROSITE_ROOT_DIR = path(ENV_TOKENS.get('MICROSITE_ROOT_DIR', ''))
+# this setting specify which backend to be used when pulling microsite specific configuration
+MICROSITE_BACKEND = ENV_TOKENS.get("MICROSITE_BACKEND", MICROSITE_BACKEND)
+# this setting specify which backend to be used when loading microsite specific templates
+MICROSITE_TEMPLATE_BACKEND = ENV_TOKENS.get("MICROSITE_TEMPLATE_BACKEND", MICROSITE_TEMPLATE_BACKEND)
+# TTL for microsite database template cache
+MICROSITE_DATABASE_TEMPLATE_CACHE_TTL = ENV_TOKENS.get(
+    "MICROSITE_DATABASE_TEMPLATE_CACHE_TTL", MICROSITE_DATABASE_TEMPLATE_CACHE_TTL
+)
+
 ############################ OAUTH2 Provider ###################################
 
 # OpenID Connect issuer ID. Normally the URL of the authentication endpoint.
 OAUTH_OIDC_ISSUER = ENV_TOKENS['OAUTH_OIDC_ISSUER']
+
+######################## CUSTOM COURSES for EDX CONNECTOR ######################
+if FEATURES.get('CUSTOM_COURSES_EDX'):
+    INSTALLED_APPS += ('openedx.core.djangoapps.ccxcon',)
+
+# Partner support link for CMS footer
+PARTNER_SUPPORT_EMAIL = ENV_TOKENS.get('PARTNER_SUPPORT_EMAIL', PARTNER_SUPPORT_EMAIL)

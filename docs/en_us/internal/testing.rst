@@ -167,6 +167,12 @@ To run these tests without ``collectstatic``, which is faster, append the follow
 
     paver test_system -s lms --fasttest
 
+For even more speed, use the ``--disable-migrations`` option to run tests without applying migrations and instead create tables directly from apps' models.
+
+::
+
+    paver test_system -s lms --disable-migrations
+
 To run cms python tests without ``collectstatic`` use this command.
 
 ::
@@ -238,20 +244,20 @@ These are examples of how to run a single test and get stdout and get coverage.
 
 ::
 
-    python -m coverage run --rcfile=./common/lib/xmodule/.coveragerc which ./manage.py cms --settings test test --traceback --logging-clear-handlers --liveserver=localhost:8000-9000 contentstore.tests.test_import_nostatic -s # cms example
-    python -m coverage run --rcfile=./lms/.coveragerc which ./manage.py lms --settings test test --traceback --logging-clear-handlers --liveserver=localhost:8000-9000  courseware.tests.test_module_render -s # lms example
+    python -m coverage run which ./manage.py cms --settings test test --traceback --logging-clear-handlers --liveserver=localhost:8000-9000 contentstore.tests.test_import_nostatic -s # cms example
+    python -m coverage run which ./manage.py lms --settings test test --traceback --logging-clear-handlers --liveserver=localhost:8000-9000  courseware.tests.test_module_render -s # lms example
 
 Use this command to generate coverage report.
 
 ::
 
-    coverage report --rcfile=./common/lib/xmodule/.coveragerc
+    coverage report
 
 Use this command to generate an HTML report.
 
 ::
 
-    coverage html --rcfile=./common/lib/xmodule/.coveragerc
+    coverage html
 
 The report is then saved in reports/common/lib/xmodule/cover/index.html
 
@@ -262,13 +268,21 @@ you can run one of these commands.
 ::
 
     paver test_system -s cms -t common/djangoapps/terrain/stubs/tests/test_youtube_stub.py
-    python -m coverage run --rcfile=cms/.coveragerc `which ./manage.py` cms --settings test test --traceback common/djangoapps/terrain/stubs/tests/test_youtube_stub.py
+    python -m coverage run `which ./manage.py` cms --settings test test --traceback common/djangoapps/terrain/stubs/tests/test_youtube_stub.py
 
 Very handy: if you pass the ``--pdb`` flag to a paver test function, or
 uncomment the ``pdb=1`` line in ``setup.cfg``, the test runner
 will drop you into pdb on error. This lets you go up and down the stack
 and see what the values of the variables are. Check out `the pdb
 documentation <http://docs.python.org/library/pdb.html>`__
+
+Use this command to put a temporary debugging breakpoint in a test.
+If you check this in, your tests will hang on jenkins.
+
+::
+
+    from nose.tools import set_trace; set_trace()
+
 
 Note: More on the ``--failed`` functionality
 
@@ -385,7 +399,7 @@ common/test/acceptance/tests. This is another example.
 
     paver test_bokchoy -t studio/test_studio_bad_data.py
 
-To run a single test faster by not repeating setup tasks us the ``--fasttest`` option.
+To run a single test faster by not repeating setup tasks use the ``--fasttest`` option.
 
 ::
 
@@ -407,7 +421,8 @@ test case method.
 During acceptance test execution, log files and also screenshots of
 failed tests are captured in test\_root/log.
 
-Use this command to put a debugging breakpoint in a test.
+Use this command to put a temporary debugging breakpoint in a test.
+If you check this in, your tests will hang on jenkins.
 
 ::
 
@@ -738,13 +753,13 @@ Code Complexity Tools
 Two tools are available for evaluating complexity of edx-platform code:
 
 - `radon <https://radon.readthedocs.org/en/latest/>`__ for Python code complexity.
-   * To obtain complexity, run 
+   * To obtain complexity, run
 
 ::
 
        paver run_complexity
 
-- `plato <https://github.com/es-analysis/plato>`__ for JavaScript code complexity. Several options are available on the command line; see documentation. 
+- `plato <https://github.com/es-analysis/plato>`__ for JavaScript code complexity. Several options are available on the command line; see documentation.
     * Below, the following command will produce an html report in a subdirectory called "jscomplexity"
 
 ::

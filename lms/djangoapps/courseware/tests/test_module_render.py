@@ -40,11 +40,12 @@ from courseware.tests.test_submitting_problems import TestSubmittingProblems
 from lms.djangoapps.lms_xblock.runtime import quote_slashes
 from lms.djangoapps.lms_xblock.field_data import LmsFieldData
 from openedx.core.lib.courses import course_image_url
+from openedx.core.lib.gating import api as gating_api
 from student.models import anonymous_id_for_user
 from xmodule.modulestore.tests.django_utils import (
     TEST_DATA_MIXED_TOY_MODULESTORE,
     TEST_DATA_XML_MODULESTORE,
-)
+    SharedModuleStoreTestCase)
 from xmodule.lti_module import LTIDescriptor
 from xmodule.modulestore import ModuleStoreEnum
 from xmodule.modulestore.django import modulestore
@@ -66,6 +67,8 @@ from edx_proctoring.api import (
 from edx_proctoring.runtime import set_runtime_service
 from edx_proctoring.tests.test_services import MockCreditService
 
+from milestones.tests.utils import MilestonesTestCaseMixin
+
 TEST_DATA_DIR = settings.COMMON_TEST_DATA_ROOT
 
 
@@ -73,6 +76,7 @@ TEST_DATA_DIR = settings.COMMON_TEST_DATA_ROOT
 @XBlock.needs("i18n")
 @XBlock.needs("fs")
 @XBlock.needs("user")
+@XBlock.needs("bookmarks")
 class PureXBlock(XBlock):
     """
     Pure XBlock to use in tests.
@@ -117,10 +121,17 @@ class GradedStatelessXBlock(XBlock):
 
 @attr('shard_1')
 @ddt.ddt
-class ModuleRenderTestCase(ModuleStoreTestCase, LoginEnrollmentTestCase):
+class ModuleRenderTestCase(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
     """
     Tests of courseware.module_render
     """
+
+    @classmethod
+    def setUpClass(cls):
+        super(ModuleRenderTestCase, cls).setUpClass()
+        cls.course_key = ToyCourseFactory.create().id
+        cls.toy_course = modulestore().get_course(cls.course_key)
+
     # TODO: this test relies on the specific setup of the toy course.
     # It should be rewritten to build the course it needs and then test that.
     def setUp(self):
@@ -129,8 +140,6 @@ class ModuleRenderTestCase(ModuleStoreTestCase, LoginEnrollmentTestCase):
         """
         super(ModuleRenderTestCase, self).setUp()
 
-        self.course_key = ToyCourseFactory.create().id
-        self.toy_course = modulestore().get_course(self.course_key)
         self.mock_user = UserFactory()
         self.mock_user.id = 1
         self.request_factory = RequestFactory()
@@ -397,17 +406,20 @@ class ModuleRenderTestCase(ModuleStoreTestCase, LoginEnrollmentTestCase):
 
 
 @attr('shard_1')
-class TestHandleXBlockCallback(ModuleStoreTestCase, LoginEnrollmentTestCase):
+class TestHandleXBlockCallback(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
     """
     Test the handle_xblock_callback function
     """
+    @classmethod
+    def setUpClass(cls):
+        super(TestHandleXBlockCallback, cls).setUpClass()
+        cls.course_key = ToyCourseFactory.create().id
+        cls.toy_course = modulestore().get_course(cls.course_key)
 
     def setUp(self):
         super(TestHandleXBlockCallback, self).setUp()
 
-        self.course_key = ToyCourseFactory.create().id
         self.location = self.course_key.make_usage_key('chapter', 'Overview')
-        self.toy_course = modulestore().get_course(self.course_key)
         self.mock_user = UserFactory.create()
         self.request_factory = RequestFactory()
 
@@ -705,19 +717,24 @@ class TestTOC(ModuleStoreTestCase):
 @attr('shard_1')
 @ddt.ddt
 @patch.dict('django.conf.settings.FEATURES', {'ENABLE_SPECIAL_EXAMS': True})
-class TestProctoringRendering(ModuleStoreTestCase):
+class TestProctoringRendering(SharedModuleStoreTestCase):
+    @classmethod
+    def setUpClass(cls):
+        super(TestProctoringRendering, cls).setUpClass()
+        cls.course_key = ToyCourseFactory.create().id
+
     """Check the Table of Contents for a course"""
     def setUp(self):
         """
         Set up the initial mongo datastores
         """
         super(TestProctoringRendering, self).setUp()
-        self.course_key = ToyCourseFactory.create().id
         self.chapter = 'Overview'
         chapter_url = '%s/%s/%s' % ('/courses', self.course_key, self.chapter)
         factory = RequestFactory()
         self.request = factory.get(chapter_url)
-        self.request.user = UserFactory()
+        self.request.user = UserFactory.create()
+        self.user = UserFactory.create()
         self.modulestore = self.store._get_modulestore_for_courselike(self.course_key)  # pylint: disable=protected-access
         with self.modulestore.bulk_operations(self.course_key):
             self.toy_course = self.store.get_course(self.course_key, depth=2)
@@ -1024,6 +1041,87 @@ class TestProctoringRendering(ModuleStoreTestCase):
 
 
 @attr('shard_1')
+class TestGatedSubsectionRendering(SharedModuleStoreTestCase, MilestonesTestCaseMixin):
+    @classmethod
+    def setUpClass(cls):
+        super(TestGatedSubsectionRendering, cls).setUpClass()
+        cls.course = CourseFactory.create()
+        cls.course.enable_subsection_gating = True
+        cls.course.save()
+        cls.store.update_item(cls.course, 0)
+
+    """
+    Test the toc for a course is rendered correctly when there is gated content
+    """
+    def setUp(self):
+        """
+        Set up the initial test data
+        """
+        super(TestGatedSubsectionRendering, self).setUp()
+
+        self.chapter = ItemFactory.create(
+            parent=self.course,
+            category="chapter",
+            display_name="Chapter"
+        )
+        self.open_seq = ItemFactory.create(
+            parent=self.chapter,
+            category='sequential',
+            display_name="Open Sequential"
+        )
+        self.gated_seq = ItemFactory.create(
+            parent=self.chapter,
+            category='sequential',
+            display_name="Gated Sequential"
+        )
+        self.request = RequestFactory().get('%s/%s/%s' % ('/courses', self.course.id, self.chapter.display_name))
+        self.request.user = UserFactory()
+        self.field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
+            self.course.id, self.request.user, self.course, depth=2
+        )
+        gating_api.add_prerequisite(self.course.id, self.open_seq.location)
+        gating_api.set_required_content(self.course.id, self.gated_seq.location, self.open_seq.location, 100)
+
+    def _find_url_name(self, toc, url_name):
+        """
+        Helper to return the TOC section associated with url_name
+        """
+
+        for entry in toc:
+            if entry['url_name'] == url_name:
+                return entry
+
+        return None
+
+    def _find_sequential(self, toc, chapter_url_name, sequential_url_name):
+        """
+        Helper to return the sequential associated with sequential_url_name
+        """
+
+        chapter = self._find_url_name(toc, chapter_url_name)
+        if chapter:
+            return self._find_url_name(chapter['sections'], sequential_url_name)
+
+        return None
+
+    def test_toc_with_gated_sequential(self):
+        """
+        Test generation of TOC for a course with a gated subsection
+        """
+        actual = render.toc_for_course(
+            self.request.user,
+            self.request,
+            self.course,
+            self.chapter.display_name,
+            self.open_seq.display_name,
+            self.field_data_cache
+        )
+        self.assertIsNotNone(self._find_sequential(actual, 'Chapter', 'Open_Sequential'))
+        self.assertIsNone(self._find_sequential(actual, 'Chapter', 'Gated_Sequential'))
+        self.assertIsNone(self._find_sequential(actual, 'Non-existant_Chapter', 'Non-existant_Sequential'))
+
+
+@attr('shard_1')
 @ddt.ddt
 class TestHtmlModifiers(ModuleStoreTestCase):
     """
@@ -1032,11 +1130,10 @@ class TestHtmlModifiers(ModuleStoreTestCase):
     """
     def setUp(self):
         super(TestHtmlModifiers, self).setUp()
-        self.user = UserFactory.create()
+        self.course = CourseFactory.create()
         self.request = RequestFactory().get('/')
         self.request.user = self.user
         self.request.session = {}
-        self.course = CourseFactory.create()
         self.content_string = '<p>This is the content<p>'
         self.rewrite_link = '<a href="/static/foo/content">Test rewrite</a>'
         self.rewrite_bad_link = '<img src="/static//file.jpg" />'
@@ -1103,7 +1200,7 @@ class TestHtmlModifiers(ModuleStoreTestCase):
         result_fragment = module.render(STUDENT_VIEW)
 
         self.assertIn(
-            '/c4x/{org}/{course}/asset/_file.jpg'.format(
+            '/c4x/{org}/{course}/asset/file.jpg'.format(
                 org=self.course.location.org,
                 course=self.course.location.course,
             ),
@@ -1151,7 +1248,7 @@ class TestHtmlModifiers(ModuleStoreTestCase):
 
     def test_get_course_info_section(self):
         self.course.static_asset_path = "toy_course_dir"
-        get_course_info_section(self.request, self.course, "handouts")
+        get_course_info_section(self.request, self.request.user, self.course, "handouts")
         # NOTE: check handouts output...right now test course seems to have no such content
         # at least this makes sure get_course_info_section returns without exception
 
@@ -1232,6 +1329,7 @@ class ViewInStudioTest(ModuleStoreTestCase):
         self.request.user = self.staff_user
         self.request.session = {}
         self.module = None
+        self.default_context = {'bookmarked': False, 'username': self.user.username}
 
     def _get_module(self, course_id, descriptor, location):
         """
@@ -1290,14 +1388,14 @@ class MongoViewInStudioTest(ViewInStudioTest):
     def test_view_in_studio_link_studio_course(self):
         """Regular Studio courses should see 'View in Studio' links."""
         self.setup_mongo_course()
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         self.assertIn('View Unit in Studio', result_fragment.content)
 
     def test_view_in_studio_link_only_in_top_level_vertical(self):
         """Regular Studio courses should not see 'View in Studio' for child verticals of verticals."""
         self.setup_mongo_course()
         # Render the parent vertical, then check that there is only a single "View Unit in Studio" link.
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         # The single "View Unit in Studio" link should appear before the first xmodule vertical definition.
         parts = result_fragment.content.split('data-block-type="vertical"')
         self.assertEqual(3, len(parts), "Did not find two vertical blocks")
@@ -1308,7 +1406,7 @@ class MongoViewInStudioTest(ViewInStudioTest):
     def test_view_in_studio_link_xml_authored(self):
         """Courses that change 'course_edit_method' setting can hide 'View in Studio' links."""
         self.setup_mongo_course(course_edit_method='XML')
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         self.assertNotIn('View Unit in Studio', result_fragment.content)
 
 
@@ -1321,19 +1419,19 @@ class MixedViewInStudioTest(ViewInStudioTest):
     def test_view_in_studio_link_mongo_backed(self):
         """Mixed mongo courses that are mongo backed should see 'View in Studio' links."""
         self.setup_mongo_course()
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         self.assertIn('View Unit in Studio', result_fragment.content)
 
     def test_view_in_studio_link_xml_authored(self):
         """Courses that change 'course_edit_method' setting can hide 'View in Studio' links."""
         self.setup_mongo_course(course_edit_method='XML')
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         self.assertNotIn('View Unit in Studio', result_fragment.content)
 
     def test_view_in_studio_link_xml_backed(self):
         """Course in XML only modulestore should not see 'View in Studio' links."""
         self.setup_xml_course()
-        result_fragment = self.module.render(STUDENT_VIEW)
+        result_fragment = self.module.render(STUDENT_VIEW, context=self.default_context)
         self.assertNotIn('View Unit in Studio', result_fragment.content)
 
 
@@ -1349,11 +1447,29 @@ class XmlViewInStudioTest(ViewInStudioTest):
         self.assertNotIn('View Unit in Studio', result_fragment.content)
 
 
+@XBlock.tag("detached")
+class DetachedXBlock(XBlock):
+    """
+    XBlock marked with the 'detached' flag.
+    """
+    def student_view(self, context=None):  # pylint: disable=unused-argument
+        """
+        A simple view that returns just enough to test.
+        """
+        frag = Fragment(u"Hello there!")
+        return frag
+
+
 @attr('shard_1')
 @patch.dict('django.conf.settings.FEATURES', {'DISPLAY_DEBUG_INFO_TO_STAFF': True, 'DISPLAY_HISTOGRAMS_TO_STAFF': True})
 @patch('courseware.module_render.has_access', Mock(return_value=True, autospec=True))
-class TestStaffDebugInfo(ModuleStoreTestCase):
+class TestStaffDebugInfo(SharedModuleStoreTestCase):
     """Tests to verify that Staff Debug Info panel and histograms are displayed to staff."""
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestStaffDebugInfo, cls).setUpClass()
+        cls.course = CourseFactory.create()
 
     def setUp(self):
         super(TestStaffDebugInfo, self).setUp()
@@ -1361,7 +1477,6 @@ class TestStaffDebugInfo(ModuleStoreTestCase):
         self.request = RequestFactory().get('/')
         self.request.user = self.user
         self.request.session = {}
-        self.course = CourseFactory.create()
 
         problem_xml = OptionResponseXMLFactory().build_xml(
             question_text='The correct answer is Correct',
@@ -1403,6 +1518,28 @@ class TestStaffDebugInfo(ModuleStoreTestCase):
         )
         result_fragment = module.render(STUDENT_VIEW)
         self.assertIn('Staff Debug', result_fragment.content)
+
+    @XBlock.register_temp_plugin(DetachedXBlock, identifier='detached-block')
+    def test_staff_debug_info_disabled_for_detached_blocks(self):
+        """Staff markup should not be present on detached blocks."""
+
+        descriptor = ItemFactory.create(
+            category='detached-block',
+            display_name='Detached Block'
+        )
+        field_data_cache = FieldDataCache.cache_for_descriptor_descendents(
+            self.course.id,
+            self.user,
+            descriptor
+        )
+        module = render.get_module(
+            self.user,
+            self.request,
+            descriptor.location,
+            field_data_cache,
+        )
+        result_fragment = module.render(STUDENT_VIEW)
+        self.assertNotIn('Staff Debug', result_fragment.content)
 
     @patch.dict('django.conf.settings.FEATURES', {'DISPLAY_HISTOGRAMS_TO_STAFF': False})
     def test_histogram_disabled(self):
@@ -1472,16 +1609,20 @@ PER_STUDENT_ANONYMIZED_DESCRIPTORS = set(
 
 @attr('shard_1')
 @ddt.ddt
-class TestAnonymousStudentId(ModuleStoreTestCase, LoginEnrollmentTestCase):
+class TestAnonymousStudentId(SharedModuleStoreTestCase, LoginEnrollmentTestCase):
     """
     Test that anonymous_student_id is set correctly across a variety of XBlock types
     """
 
+    @classmethod
+    def setUpClass(cls):
+        super(TestAnonymousStudentId, cls).setUpClass()
+        cls.course_key = ToyCourseFactory.create().id
+        cls.course = modulestore().get_course(cls.course_key)
+
     def setUp(self):
-        super(TestAnonymousStudentId, self).setUp(create_user=False)
+        super(TestAnonymousStudentId, self).setUp()
         self.user = UserFactory()
-        self.course_key = ToyCourseFactory.create().id
-        self.course = modulestore().get_course(self.course_key)
 
     @patch('courseware.module_render.has_access', Mock(return_value=True, autospec=True))
     def _get_anonymous_id(self, course_id, xblock_class):
@@ -1551,10 +1692,15 @@ class TestAnonymousStudentId(ModuleStoreTestCase, LoginEnrollmentTestCase):
 
 @attr('shard_1')
 @patch('track.views.tracker', autospec=True)
-class TestModuleTrackingContext(ModuleStoreTestCase):
+class TestModuleTrackingContext(SharedModuleStoreTestCase):
     """
     Ensure correct tracking information is included in events emitted during XBlock callback handling.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestModuleTrackingContext, cls).setUpClass()
+        cls.course = CourseFactory.create()
 
     def setUp(self):
         super(TestModuleTrackingContext, self).setUp()
@@ -1809,10 +1955,16 @@ class TestEventPublishing(ModuleStoreTestCase, LoginEnrollmentTestCase):
 
 @attr('shard_1')
 @ddt.ddt
-class LMSXBlockServiceBindingTest(ModuleStoreTestCase):
+class LMSXBlockServiceBindingTest(SharedModuleStoreTestCase):
     """
     Tests that the LMS Module System (XBlock Runtime) provides an expected set of services.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        super(LMSXBlockServiceBindingTest, cls).setUpClass()
+        cls.course = CourseFactory.create()
+
     def setUp(self):
         """
         Set up the user and other fields that will be used to instantiate the runtime.
@@ -1820,13 +1972,12 @@ class LMSXBlockServiceBindingTest(ModuleStoreTestCase):
         super(LMSXBlockServiceBindingTest, self).setUp()
         self.user = UserFactory()
         self.student_data = Mock()
-        self.course = CourseFactory.create()
         self.track_function = Mock()
         self.xqueue_callback_url_prefix = Mock()
         self.request_token = Mock()
 
     @XBlock.register_temp_plugin(PureXBlock, identifier='pure')
-    @ddt.data("user", "i18n", "fs", "field-data")
+    @ddt.data("user", "i18n", "fs", "field-data", "bookmarks")
     def test_expected_services_exist(self, expected_service):
         """
         Tests that the 'user', 'i18n', and 'fs' services are provided by the LMS runtime.
@@ -1895,16 +2046,21 @@ USER_NUMBERS = range(2)
 
 @attr('shard_1')
 @ddt.ddt
-class TestFilteredChildren(ModuleStoreTestCase):
+class TestFilteredChildren(SharedModuleStoreTestCase):
     """
     Tests that verify access to XBlock/XModule children work correctly
     even when those children are filtered by the runtime when loaded.
     """
+
+    @classmethod
+    def setUpClass(cls):
+        super(TestFilteredChildren, cls).setUpClass()
+        cls.course = CourseFactory.create()
+
     # pylint: disable=attribute-defined-outside-init, no-member
     def setUp(self):
         super(TestFilteredChildren, self).setUp()
         self.users = {number: UserFactory() for number in USER_NUMBERS}
-        self.course = CourseFactory()
 
         self._old_has_access = render.has_access
         patcher = patch('courseware.module_render.has_access', self._has_access)

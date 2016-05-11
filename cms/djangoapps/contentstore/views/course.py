@@ -17,13 +17,13 @@ import django.utils
 from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_http_methods, require_GET
 from django.views.decorators.csrf import ensure_csrf_cookie
+
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
 from opaque_keys.edx.locations import Location
 
 from .component import (
     ADVANCED_COMPONENT_TYPES,
-    SPLIT_TEST_COMPONENT_TYPE,
 )
 from .item import create_xblock_info
 from .library import LIBRARIES_ENABLED
@@ -70,7 +70,7 @@ from openedx.core.djangoapps.programs.utils import get_programs
 from openedx.core.djangoapps.self_paced.models import SelfPacedConfiguration
 from openedx.core.lib.course_tabs import CourseTabPluginManager
 from openedx.core.lib.courses import course_image_url
-from openedx.core.lib.js_utils import escape_json_dumps
+from openedx.core.djangolib.js_utils import dump_js_escaped_json
 from student import auth
 from student.auth import has_course_author_access, has_studio_write_access, has_studio_read_access
 from student.roles import (
@@ -90,6 +90,7 @@ from util.organizations_helpers import (
     organizations_enabled,
 )
 from util.string_utils import _has_non_ascii_characters
+from util.course_key_utils import from_string_or_404
 from xmodule.contentstore.content import StaticContent
 from xmodule.course_module import CourseFields
 from xmodule.course_module import DEFAULT_START_DATE
@@ -164,7 +165,7 @@ def course_notifications_handler(request, course_key_string=None, action_state_i
     if not course_key_string or not action_state_id:
         return HttpResponseBadRequest()
 
-    response_format = request.REQUEST.get('format', 'html')
+    response_format = request.GET.get('format') or request.POST.get('format') or 'html'
 
     course_key = CourseKey.from_string(course_key_string)
 
@@ -250,7 +251,7 @@ def course_handler(request, course_key_string=None):
         json: delete this branch from this course (leaving off /branch/draft would imply delete the course)
     """
     try:
-        response_format = request.REQUEST.get('format', 'html')
+        response_format = request.GET.get('format') or request.POST.get('format') or 'html'
         if response_format == 'json' or 'application/json' in request.META.get('HTTP_ACCEPT', 'application/json'):
             if request.method == 'GET':
                 course_key = CourseKey.from_string(course_key_string)
@@ -324,10 +325,10 @@ def course_search_index_handler(request, course_key_string):
         try:
             reindex_course_and_check_access(course_key, request.user)
         except SearchIndexingError as search_err:
-            return HttpResponse(escape_json_dumps({
+            return HttpResponse(dump_js_escaped_json({
                 "user_message": search_err.error_list
             }), content_type=content_type, status=500)
-        return HttpResponse(escape_json_dumps({
+        return HttpResponse(dump_js_escaped_json({
             "user_message": _("Course has been successfully reindexed.")
         }), content_type=content_type, status=200)
 
@@ -343,6 +344,39 @@ def _course_outline_json(request, course_module):
         include_children_predicate=lambda xblock: not xblock.category == 'vertical',
         user=request.user
     )
+
+
+def get_in_process_course_actions(request):
+    """
+     Get all in-process course actions
+    """
+    return [
+        course for course in
+        CourseRerunState.objects.find_all(
+            exclude_args={'state': CourseRerunUIStateManager.State.SUCCEEDED}, should_display=True
+        )
+        if has_studio_read_access(request.user, course.course_key)
+    ]
+
+
+def _accessible_courses_summary_list(request):
+    """
+    List all courses available to the logged in user by iterating through all the courses
+    """
+    def course_filter(course_summary):
+        """
+        Filter out unusable and inaccessible courses
+        """
+        # pylint: disable=fixme
+        # TODO remove this condition when templates purged from db
+        if course_summary.location.course == 'templates':
+            return False
+
+        return has_studio_read_access(request.user, course_summary.id)
+
+    courses_summary = filter(course_filter, modulestore().get_course_summaries())
+    in_process_course_actions = get_in_process_course_actions(request)
+    return courses_summary, in_process_course_actions
 
 
 def _accessible_courses_list(request):
@@ -364,13 +398,8 @@ def _accessible_courses_list(request):
         return has_studio_read_access(request.user, course.id)
 
     courses = filter(course_filter, modulestore().get_courses())
-    in_process_course_actions = [
-        course for course in
-        CourseRerunState.objects.find_all(
-            exclude_args={'state': CourseRerunUIStateManager.State.SUCCEEDED}, should_display=True
-        )
-        if has_studio_read_access(request.user, course.course_key)
-    ]
+
+    in_process_course_actions = get_in_process_course_actions(request)
     return courses, in_process_course_actions
 
 
@@ -554,7 +583,7 @@ def course_index(request, course_key):
             reindex_link = "/course/{course_id}/search_reindex".format(course_id=unicode(course_key))
         sections = course_module.get_children()
         course_structure = _course_outline_json(request, course_module)
-        locator_to_show = request.REQUEST.get('show', None)
+        locator_to_show = request.GET.get('show', None)
         course_release_date = get_default_time_display(course_module.start) if course_module.start != DEFAULT_START_DATE else _("Unscheduled")
         settings_url = reverse_course_url('settings_handler', course_key)
 
@@ -593,14 +622,14 @@ def get_courses_accessible_to_user(request):
     """
     if GlobalStaff().has_user(request.user):
         # user has global access so no need to get courses from django groups
-        courses, in_process_course_actions = _accessible_courses_list(request)
+        courses, in_process_course_actions = _accessible_courses_summary_list(request)
     else:
         try:
             courses, in_process_course_actions = _accessible_courses_list_from_groups(request)
         except AccessListFallback:
             # user have some old groups or there was some error getting courses from django groups
             # so fallback to iterating through all courses
-            courses, in_process_course_actions = _accessible_courses_list(request)
+            courses, in_process_course_actions = _accessible_courses_summary_list(request)
     return courses, in_process_course_actions
 
 
@@ -626,9 +655,9 @@ def _remove_in_process_courses(courses, in_process_course_actions):
 
     in_process_action_course_keys = [uca.course_key for uca in in_process_course_actions]
     courses = [
-        format_course_for_view(c)
-        for c in courses
-        if not isinstance(c, ErrorDescriptor) and (c.id not in in_process_action_course_keys)
+        format_course_for_view(course)
+        for course in courses
+        if not isinstance(course, ErrorDescriptor) and (course.id not in in_process_action_course_keys)
     ]
     return courses
 
@@ -840,10 +869,7 @@ def course_info_handler(request, course_key_string):
     GET
         html: return html for editing the course info handouts and updates.
     """
-    try:
-        course_key = CourseKey.from_string(course_key_string)
-    except InvalidKeyError:
-        raise Http404
+    course_key = from_string_or_404(course_key_string)
 
     with modulestore().bulk_operations(course_key):
         course_module = get_course_and_check_access(course_key, request.user)
@@ -1569,8 +1595,8 @@ def are_content_experiments_enabled(course):
     Returns True if content experiments have been enabled for the course.
     """
     return (
-        SPLIT_TEST_COMPONENT_TYPE in ADVANCED_COMPONENT_TYPES and
-        SPLIT_TEST_COMPONENT_TYPE in course.advanced_modules
+        'split_test' in ADVANCED_COMPONENT_TYPES and
+        'split_test' in course.advanced_modules
     )
 
 

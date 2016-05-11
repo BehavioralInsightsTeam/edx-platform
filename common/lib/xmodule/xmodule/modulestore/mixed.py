@@ -95,6 +95,40 @@ def strip_key(func):
     return inner
 
 
+def prepare_asides(func):
+    """
+    A decorator to handle optional asides param
+    """
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        """
+        Supported kwargs:
+            asides - list with connected asides data for the passed block
+        """
+        if 'asides' in kwargs:
+            kwargs['asides'] = prepare_asides_to_store(kwargs['asides'])
+        return func(*args, **kwargs)
+    return wrapper
+
+
+def prepare_asides_to_store(asides_source):
+    """
+    Convert Asides Xblocks objects to the list of dicts (to store this information in MongoDB)
+    """
+    asides = None
+    if asides_source:
+        asides = []
+        for asd in asides_source:
+            aside_fields = {}
+            for asd_field_key, asd_field_val in asd.fields.iteritems():
+                aside_fields[asd_field_key] = asd_field_val.read_from(asd)
+            asides.append({
+                'aside_type': asd.scope_ids.block_type,
+                'fields': aside_fields
+            })
+    return asides
+
+
 class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
     """
     ModuleStore knows how to route requests to the right persistence ms
@@ -264,6 +298,26 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
 
         store = self._get_modulestore_for_courselike(course_key)
         return store.get_items(course_key, **kwargs)
+
+    @strip_key
+    def get_course_summaries(self, **kwargs):
+        """
+        Returns a list containing the course information in CourseSummary objects.
+        Information contains `location`, `display_name`, `locator` of the courses in this modulestore.
+        """
+        course_summaries = {}
+        for store in self.modulestores:
+            for course_summary in store.get_course_summaries(**kwargs):
+                course_id = self._clean_locator_for_mapping(locator=course_summary.id)
+
+                # Check if course is indeed unique. Save it in result if unique
+                if course_id in course_summaries:
+                    log.warning(
+                        u"Modulestore %s have duplicate courses %s; skipping from result.", store, course_id
+                    )
+                else:
+                    course_summaries[course_id] = course_summary
+        return course_summaries.values()
 
     @strip_key
     def get_courses(self, **kwargs):
@@ -667,6 +721,7 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
             ))
 
     @strip_key
+    @prepare_asides
     def create_item(self, user_id, course_key, block_type, block_id=None, fields=None, **kwargs):
         """
         Creates and saves a new item in a course.
@@ -687,6 +742,7 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         return modulestore.create_item(user_id, course_key, block_type, block_id=block_id, fields=fields, **kwargs)
 
     @strip_key
+    @prepare_asides
     def create_child(self, user_id, parent_usage_key, block_type, block_id=None, fields=None, **kwargs):
         """
         Creates and saves a new xblock that is a child of the specified block
@@ -707,6 +763,7 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         return modulestore.create_child(user_id, parent_usage_key, block_type, block_id=block_id, fields=fields, **kwargs)
 
     @strip_key
+    @prepare_asides
     def import_xblock(self, user_id, course_key, block_type, block_id, fields=None, runtime=None, **kwargs):
         """
         See :py:meth `ModuleStoreDraftAndPublished.import_xblock`
@@ -714,7 +771,7 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         Defer to the course's modulestore if it supports this method
         """
         store = self._verify_modulestore_support(course_key, 'import_xblock')
-        return store.import_xblock(user_id, course_key, block_type, block_id, fields, runtime)
+        return store.import_xblock(user_id, course_key, block_type, block_id, fields, runtime, **kwargs)
 
     @strip_key
     def copy_from_template(self, source_keys, dest_key, user_id, **kwargs):
@@ -725,6 +782,7 @@ class MixedModuleStore(ModuleStoreDraftAndPublished, ModuleStoreWriteBase):
         return store.copy_from_template(source_keys, dest_key, user_id)
 
     @strip_key
+    @prepare_asides
     def update_item(self, xblock, user_id, allow_not_found=False, **kwargs):
         """
         Update the xblock persisted to be the same as the given for all types of fields
