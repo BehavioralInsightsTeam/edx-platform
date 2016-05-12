@@ -27,6 +27,20 @@ var edx = edx || {};
             this.render();
         },
 
+        requiresVerification: function(product){
+            function getAttribute(attribute){
+                var attrs = product.attribute_values;
+                for(var idx=0; idx < attrs.length; idx++){
+                    var attr = attrs[idx];
+                    if (attr.name == attribute){
+                        return attr.value;
+                    }
+                }
+            }
+
+            return getAttribute("id_verification_required");
+        },
+
         renderReceipt: function (data) {
             var templateHtml = $("#receipt-tpl").html(),
                 context = {
@@ -35,12 +49,23 @@ var edx = edx || {};
                 },
                 providerId;
 
+            var requires_verification = false;
+
+            var _this = this;
+
+            _.each(data.lines, function (line) {
+               if (_this.requiresVerification(line.product)){
+                   requires_verification = true;
+               }
+            });
+
             // Add the receipt info to the template context
             this.courseKey = this.getOrderCourseKey(data);
             this.username = this.$el.data('username');
             _.extend(context, {
                 receipt: this.receiptContext(data),
-                courseKey: this.courseKey
+                courseKey: this.courseKey,
+                requires_verification: requires_verification
             });
 
             this.$el.html(_.template(templateHtml)(context));
