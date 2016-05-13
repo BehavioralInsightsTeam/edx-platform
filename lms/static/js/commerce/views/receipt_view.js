@@ -27,6 +27,15 @@ var edx = edx || {};
             this.render();
         },
 
+        requiresVerification: function(product){
+            function getAttribute(attribute){
+                var attr = _.findWhere(product.attribute_values, {name: attribute});
+                return attr && attr.value;
+            }
+
+            return getAttribute("id_verification_required");
+        },
+
         renderReceipt: function (data) {
             var templateHtml = $("#receipt-tpl").html(),
                 context = {
@@ -35,12 +44,17 @@ var edx = edx || {};
                 },
                 providerId;
 
+            var requires_verification = _.any(data.lines, function (line) {
+                return this.requiresVerification(line.product);
+            }, this);
+            
             // Add the receipt info to the template context
             this.courseKey = this.getOrderCourseKey(data);
             this.username = this.$el.data('username');
             _.extend(context, {
                 receipt: this.receiptContext(data),
-                courseKey: this.courseKey
+                courseKey: this.courseKey,
+                requires_verification: requires_verification
             });
 
             this.$el.html(_.template(templateHtml)(context));
