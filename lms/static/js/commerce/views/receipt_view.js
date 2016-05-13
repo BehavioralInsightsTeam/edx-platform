@@ -29,13 +29,8 @@ var edx = edx || {};
 
         requiresVerification: function(product){
             function getAttribute(attribute){
-                var attrs = product.attribute_values;
-                for(var idx=0; idx < attrs.length; idx++){
-                    var attr = attrs[idx];
-                    if (attr.name == attribute){
-                        return attr.value;
-                    }
-                }
+                var attr = _.findWhere(product.attribute_values, {name: attribute});
+                return attr && attr.value;
             }
 
             return getAttribute("id_verification_required");
@@ -49,16 +44,10 @@ var edx = edx || {};
                 },
                 providerId;
 
-            var requires_verification = false;
-
-            var _this = this;
-
-            _.each(data.lines, function (line) {
-               if (_this.requiresVerification(line.product)){
-                   requires_verification = true;
-               }
-            });
-
+            var requires_verification = _.any(data.lines, function (line) {
+                return this.requiresVerification(line.product);
+            }, this);
+            
             // Add the receipt info to the template context
             this.courseKey = this.getOrderCourseKey(data);
             this.username = this.$el.data('username');
