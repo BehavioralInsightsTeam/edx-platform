@@ -17,7 +17,7 @@
         }
 
         this.hide();
-        _.bindAll(this, 'show', 'hide', 'showTooltip', 'moveTooltip', 'hideTooltip', 'click');
+        _.bindAll(this, 'show', 'hide', 'showTooltip', 'hideTooltip', 'click');
         this.bindEvents();
     };
 
