@@ -91,6 +91,7 @@ class SendEmail
     @$btn_task_history_email.click =>
       url = @$btn_task_history_email.data 'endpoint'
       $.ajax
+        type: 'POST'
         dataType: 'json'
         url: url
         success: (data) =>
@@ -107,6 +108,7 @@ class SendEmail
     @$btn_task_history_email_content.click =>
       url = @$btn_task_history_email_content.data 'endpoint'
       $.ajax
+        type: 'POST'
         dataType: 'json'
         url : url
         success: (data) =>
